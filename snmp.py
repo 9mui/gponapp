@@ -1,6 +1,36 @@
 import re
-import subprocess
-from typing import Optional, List
+from typing import Optional, List, Iterable, Dict
+
+from pysnmp.hlapi import (
+    SnmpEngine, CommunityData, UdpTransportTarget, ContextData,
+    ObjectType, ObjectIdentity, bulkCmd, setCmd
+)
+from pysnmp.proto.rfc1902 import (
+    Integer, OctetString, TimeTicks, Counter32, Gauge32,
+    IpAddress, Unsigned32, ObjectIdentifier
+)
+
+
+def _fmt_value(val) -> str:
+    """Convert pysnmp value to net-snmp-like text representation."""
+    if isinstance(val, OctetString):
+        return f'STRING: "{val.prettyPrint()}"'
+    if isinstance(val, TimeTicks):
+        return f'Timeticks: ({int(val)})'
+    if isinstance(val, Counter32):
+        return f'Counter32: {int(val)}'
+    if isinstance(val, Gauge32):
+        return f'Gauge32: {int(val)}'
+    if isinstance(val, Unsigned32):
+        return f'Unsigned32: {int(val)}'
+    if isinstance(val, IpAddress):
+        return f'IpAddress: {val.prettyPrint()}'
+    if isinstance(val, Integer):
+        return f'INTEGER: {int(val)}'
+    if isinstance(val, ObjectIdentifier):
+        return f'OID: {val.prettyPrint()}'
+    return val.prettyPrint()
+
 
 IDX_RE = re.compile(r"\.(\d+)\.(\d+)\s*=\s*STRING:\s*\"?([^\"]+)\"?$", re.IGNORECASE)
 
@@ -8,22 +38,94 @@ IDX_RE = re.compile(r"\.(\d+)\.(\d+)\s*=\s*STRING:\s*\"?([^\"]+)\"?$", re.IGNORE
 SNMP_WALK_CMD  = "snmpbulkwalk"
 SNMP_WALK_OPTS = ["-v2c", "-On", "-OXs", "-Cc", "-Cr50"]  # числовые OID, компактные типы, continue, bulk
 SNMP_SET_OPTS  = ["-v2c", "-On", "-OXs"]                  # set: формат не критичен, но пусть будет единый
+=======
+
 
 def snmpwalk(host: str, community: str, oid: str, timeout=2) -> list[str]:
-    cmd = [SNMP_WALK_CMD, *SNMP_WALK_OPTS, "-c", community, "-t", str(timeout), host, oid]
-    out = subprocess.run(cmd, capture_output=True, text=True)
-    # Даже если stderr содержит предупреждение, stdout нам важнее
-    txt = (out.stdout or "").strip()
-    return [ln.rstrip() for ln in txt.splitlines() if ln.strip()]
+    """Walk single OID subtree using pysnmp without spawning processes."""
+    engine = SnmpEngine()
+    target = UdpTransportTarget((host, 161), timeout=timeout)
+    obj = ObjectType(ObjectIdentity(oid))
+    res: List[str] = []
+    for (errInd, errStat, errIdx, varBinds) in bulkCmd(
+        engine,
+        CommunityData(community, mpModel=1),
+        target,
+        ContextData(),
+        0, 25,
+        obj,
+        lexicographicMode=False,
+    ):
+        if errInd or errStat:
+            break
+        for vb in varBinds:
+            res.append(f"{vb[0].prettyPrint()} = {_fmt_value(vb[1])}")
+    return res
+
+
+def snmpwalk_bulk(host: str, community: str, oids: Iterable[str], timeout=2) -> Dict[str, List[str]]:
+    """Fetch several OID trees in a single bulk request."""
+    engine = SnmpEngine()
+    target = UdpTransportTarget((host, 161), timeout=timeout)
+    obj_types = [ObjectType(ObjectIdentity(o)) for o in oids]
+    res: Dict[str, List[str]] = {o: [] for o in oids}
+    for (errInd, errStat, errIdx, varBinds) in bulkCmd(
+        engine,
+        CommunityData(community, mpModel=1),
+        target,
+        ContextData(),
+        0, 25,
+        *obj_types,
+        lexicographicMode=False,
+    ):
+        if errInd or errStat:
+            break
+        for vb in varBinds:
+            oid_str = vb[0].prettyPrint()
+            line = f"{oid_str} = {_fmt_value(vb[1])}"
+            for base in res:
+                if oid_str.startswith(base):
+                    res[base].append(line)
+                    break
+    return res
+
 
 def snmpset(host: str, community: str, oid: str, typechar: str, value: str, timeout=2) -> bool:
-    """
-    Выполнить SNMP SET через net-snmp. typechar: i,u,t,a,o,x,d,b,s,…
-    Пример: snmpset(ip, comm, f"{OID_IF_ADMIN_STATUS}.117", "i", "2")
-    """
-    cmd = ["snmpset", *SNMP_SET_OPTS, "-c", community, "-t", str(timeout), host, oid, typechar, value]
-    out = subprocess.run(cmd, capture_output=True, text=True)
-    return out.returncode == 0
+    """Perform SNMP SET using pysnmp. typechar: i,u,t,a,o,s,…"""
+    typechar = (typechar or '').lower()
+    tmap = {
+        'i': Integer,
+        'u': Unsigned32,
+        't': TimeTicks,
+        'a': IpAddress,
+        'o': ObjectIdentifier,
+        's': OctetString,
+        'x': OctetString,
+        'd': OctetString,
+        'b': OctetString,
+    }
+    cls = tmap.get(typechar, OctetString)
+    try:
+        if cls in (Integer, Unsigned32, TimeTicks):
+            val_obj = cls(int(value))
+        elif cls is IpAddress:
+            val_obj = cls(value)
+        elif cls is ObjectIdentifier:
+            val_obj = cls(value)
+        else:
+            val_obj = cls(value)
+    except Exception:
+        return False
+    errorIndication, errorStatus, errorIndex, varBinds = next(
+        setCmd(
+            SnmpEngine(),
+            CommunityData(community, mpModel=1),
+            UdpTransportTarget((host, 161), timeout=timeout),
+            ContextData(),
+            ObjectType(ObjectIdentity(oid), val_obj)
+        )
+    )
+    return not errorIndication and errorStatus == 0
 
 def parse_uptime_ticks(lines: List[str]) -> Optional[int]:
     if not lines:
