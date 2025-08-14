@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>ONU не найдена</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #0f141b; /* тёмный фон */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: #e5e7eb; /* светлый текст */
+            font-family: sans-serif;
+        }
+        img {
+            max-width: 90%;
+            height: auto;
+            opacity: 0;
+            transform: scale(0.95);
+            animation: fadeIn 1s ease forwards;
+        }
+        p {
+            margin-top: 16px;
+            font-size: 1.2rem;
+            opacity: 0;
+            animation: fadeIn 1s ease forwards;
+            animation-delay: 0.6s;
+        }
+        .actions {
+            margin-top: 10px;
+            opacity: 0;
+            animation: fadeIn 1s ease forwards;
+            animation-delay: 1.2s;
+            display: flex;
+            gap: 8px;
+        }
+        .btn {
+            display: inline-block;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            padding: 8px 14px;
+            font-size: 14px;
+            line-height: 1.2;
+            cursor: pointer;
+            text-decoration: none;
+            text-align: center;
+        }
+        .btn.back {
+            background: #1e2a36;
+            color: #cfe4ff;
+            border-color: #334b62;
+        }
+        .btn.back:hover {
+            background: #263545;
+        }
+        @keyframes fadeIn {
+            to { opacity: 1; transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <img src="{{ url_for('static', filename='img/not_found.gif') }}" alt="ONU не найдена">
+    <p>ONU не найдена</p>
+
+    <div class="actions">
+        <a class="btn back" href="javascript:history.back()">Вернуться назад</a>
+        {# Если захочешь добавить ссылку на конкретный роут, раскомментируй и передай его в контексте:
+           <a class="btn back" href="{{ url_for('olt_device', ip=some_ip) }}">На OLT</a>
+        #}
+    </div>
+</body>
+</html>

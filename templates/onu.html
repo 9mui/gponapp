@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Заголовок + кнопка перезагрузки справа -->
+<div class="onu-header">
+  <h2 class="onu-title">ONU {{ sn }}</h2>
+  <form method="post" action="{{ url_for('onu_reboot', sn=sn) }}"
+        onsubmit="return confirm('Перезагрузить ONU {{ sn }}?')">
+    <button class="btn warn">Перезагрузить ONU</button>
+  </form>
+</div>
+
+<p class="onu-meta">
+  OLT: {{ olt_ip }} |
+  Порт: {{ port_name_full }}
+</p>
+
+<!-- Компактная таблица свойств -->
+<div class="kv-wrap">
+  <table class="kv">
+    <tbody>
+      <tr>
+        <th>Статус</th>
+        <td>
+          {% if status == 3 %}ONLINE
+          {% elif status in [0,1,2] %}OFFLINE
+          {% else %}Неизвестно ({{ status }})
+          {% endif %}
+        </td>
+      </tr>
+
+      {# --- Агрегированный статус LAN: один показатель up/down (или "н/д") --- #}
+      {% set sn_str = sn|string %}
+
+      {# Базовая агрегация по списку портов #}
+      {% set lan_status_base = '-' %}
+      {% if lan_list %}
+        {% set ups = lan_list | selectattr('text','equalto','up') | list %}
+        {% set downs = lan_list | selectattr('text','equalto','down') | list %}
+        {% if ups|length > 0 %}
+          {% set lan_status_base = 'up' %}
+        {% elif downs|length > 0 %}
+          {% set lan_status_base = 'down' %}
+        {% else %}
+          {% set lan_status_base = '-' %}
+        {% endif %}
+      {% else %}
+        {% set lan_status_base = '-' %}
+      {% endif %}
+
+      {# Правило: если SN начинается на 5 и ONU онлайн — LAN считаем up #}
+      {% set lan_status = lan_status_base %}
+      {% if status == 3 and sn_str.startswith('5') %}
+        {% set lan_status = 'up' %}
+      {% endif %}
+
+      <tr>
+        <th>LAN-порты ONU</th>
+        <td>
+          {% if lan_status == 'up' %}
+            <span class="badge ok">up</span>
+          {% elif lan_status == 'down' %}
+            <span class="badge bad">down</span>
+          {% else %}
+            <span class="badge dim">н/д</span>
+          {% endif %}
+        </td>
+      </tr>
+
+      <tr><th>RX (dBm)</th><td>{{ rx is not none and rx or "-" }}</td></tr>
+      <tr><th>TX (dBm)</th><td>{{ tx is not none and tx or "-" }}</td></tr>
+      <tr><th>Производитель</th><td>{{ vendor if vendor else "-" }}</td></tr>
+      <tr><th>Дистанция</th><td>{{ distance is not none and (distance|string + " м") or "-" }}</td></tr>
+
+      {# Причина последнего отключения — только если оффлайн #}
+      {% if status in [0,1,2] %}
+        <tr><th>Причина последнего отключение</th><td>{{ last_down }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Кнопка обновления -->
+<div class="onu-footer">
+  <a class="btn soft" href="{{ url_for('onu_by_sn', sn=sn) }}">Обновить</a>
+</div>
+
+<!-- Картинка статуса внизу -->
+<div class="onu-status-img">
+  {% if status in [0,1,2] %}
+    <img src="{{ url_for('static', filename='img/offline.png') }}" alt="ONU Offline">
+  {% elif status == 3 %}
+    {% if lan_status == 'up' %}
+      <img src="{{ url_for('static', filename='img/online_up.png') }}" alt="ONU Online (LAN up)">
+    {% else %}
+      <img src="{{ url_for('static', filename='img/online_down.png') }}" alt="ONU Online (LAN down)">
+    {% endif %}
+  {% endif %}
+</div>
+
+<style>
+  body {
+    background-color: #0f141b; /* тёмный фон */
+    color: #e5e7eb; /* светлый текст */
+  }
+
+  .onu-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: .25rem 0 .75rem;
+  }
+  .onu-title {
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: #e5e7eb;
+  }
+  .onu-meta {
+    margin: .25rem 0 1rem;
+    color: #9aa2af;
+    font-size: 1rem;
+  }
+
+  /* Кнопки */
+  .btn {
+    display: inline-block;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 15px;
+    line-height: 1.2;
+    cursor: pointer;
+    text-decoration: none;
+    text-align: center;
+  }
+  .btn.warn {
+    background: #dc3545;
+    color: #fff;
+    border-color: #dc3545;
+  }
+  .btn.warn:hover {
+    background: #b52a38;
+    border-color: #b52a38;
+  }
+  .btn.soft {
+    background: #1e2a36;
+    color: #cfe4ff;
+    border-color: #334b62;
+  }
+  .btn.soft:hover {
+    background: #263545;
+  }
+
+  .onu-footer {
+    margin-top: 14px;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* Таблица */
+  .kv-wrap {
+    display: flex;
+    justify-content: center;
+  }
+  .kv {
+    border-collapse: collapse;
+    font-size: 17px;
+    min-width: 400px;
+    max-width: 600px;
+  }
+  .kv th, .kv td {
+    border: 1px solid #2a2f3a;
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .kv th {
+    white-space: nowrap;
+    font-weight: 600;
+    color: #cbd5e1;
+  }
+  .kv td {
+    color: #e5e7eb;
+  }
+
+  /* Бейджи */
+  .badge {
+    display: inline-block;
+    border-radius: 8px;
+    padding: 2px 8px;
+    font-size: 12px;
+    border: 1px solid #2a2f3a;
+    color: #e5e7eb;
+  }
+  .badge.ok { background: #16361e; border-color: #225c33; color: #a6f0c2; }
+  .badge.bad { background: #3b1619; border-color: #5c2227; color: #ffb3bb; }
+  .badge.dim { background: #1a242f; border-color: #2b3b4e; color: #9aa2af; }
+
+  /* Картинка статуса */
+  .onu-status-img {
+    text-align: center;
+    margin-top: 20px;
+  }
+  .onu-status-img img {
+    max-width: 380px;
+    height: auto;
+  }
+</style>
+
+{% endblock content %}

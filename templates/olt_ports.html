@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="olt-title">OLT {{ hostname }} ({{ ip }})</h2>
+
+<!-- Верхняя панель -->
+<div class="olt-actions">
+  <div class="left">
+    <form method="post" action="{{ url_for('olt_refresh', ip=ip) }}">
+      <button class="btn soft-blue">Обновить данные</button>
+    </form>
+    <a class="btn soft-blue" href="{{ url_for('olt_device', ip=ip) }}">Обзор устройства</a>
+  </div>
+  <div class="right">
+    <form method="post" action="{{ url_for('delete_olt', ip=ip) }}"
+          onsubmit="return confirm('Удалить OLT {{ hostname }} ({{ ip }}) и связанные записи?')">
+      <button class="btn warn">Удалить OLT</button>
+    </form>
+  </div>
+</div>
+
+<!-- Таблица портов -->
+<div class="kv-wrap">
+  <table class="kv">
+    <thead>
+      <tr>
+        <th>Имя</th>
+        <th>ONU</th>
+        <th>Действия</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for ifi, name, cnt in ports %}
+      <tr>
+        <td>{{ name }}</td>
+        <td>{{ cnt }}</td>
+        <td class="row-actions">
+          <a class="btn soft-blue wide" href="{{ url_for('port', ip=ip, ifindex=ifi) }}">ОНУ на порту</a>
+          <form method="post" action="{{ url_for('port_bounce', ip=ip, ifindex=ifi) }}" style="display:inline"
+                onsubmit="return confirm('Перезагрузить порт {{ name }}?')">
+            <button class="btn soft-red">Перезагрузить порт</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<style>
+  body { background-color:#0f141b; color:#e5e7eb; }
+
+  .olt-title {
+    margin: .25rem 0 1rem;
+    font-size: 1.4rem;
+    font-weight: 600;
+  }
+
+  /* Верхняя панель */
+  .olt-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 14px 0;
+    flex-wrap: wrap;
+  }
+  .olt-actions .left,
+  .olt-actions .right {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  /* Кнопки */
+  .btn {
+    display: inline-block;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 14px;
+    line-height: 1.2;
+    cursor: pointer;
+    text-decoration: none;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .btn.warn {
+    background: #dc3545;
+    color: #fff;
+    border-color: #dc3545;
+  }
+  .btn.warn:hover {
+    background: #b52a38;
+    border-color: #b52a38;
+  }
+  .btn.soft-blue {
+    background: #1e2a36;
+    color: #cfe4ff;
+    border-color: #334b62;
+  }
+  .btn.soft-blue:hover {
+    background: #263545;
+  }
+  .btn.soft-red {
+    background: #2a1e1e;
+    color: #ffb3b3;
+    border-color: #803333;
+  }
+  .btn.soft-red:hover {
+    background: #3a2626;
+  }
+  .wide {
+    min-width: 320px;
+    text-align: center;
+  }
+
+  /* Таблица */
+  .kv-wrap { display: flex; justify-content: center; }
+  .kv {
+    border-collapse: collapse;
+    min-width: 520px;
+    max-width: 100%;
+    font-size: 17px;
+  }
+  .kv th, .kv td {
+    border: 1px solid #2a2f3a;
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: middle;
+  }
+  .kv th {
+    font-weight: 600;
+    color: #cbd5e1;
+    white-space: nowrap;
+  }
+  .kv td { color: #e5e7eb; }
+  .row-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+</style>
+
+{% endblock content %}

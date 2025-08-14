@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Аплинки — {{ hostname }} ({{ ip }})</h2>
+<table>
+  <thead>
+    <tr>
+      <th>ifIndex</th><th>ifName</th><th>ifDescr</th><th>ifAlias</th>
+      <th>Oper</th><th>In 5m (bit/s)</th><th>Out 5m (bit/s)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.ifindex }}</td>
+        <td>{{ r.name }}</td>
+        <td>{{ r.descr }}</td>
+        <td>{{ r.alias }}</td>
+        <td>{% if r.oper == 1 %}UP{% elif r.oper == 2 %}DOWN{% else %}{{ r.oper or '-' }}{% endif %}</td>
+        <td>{{ r.in5 if r.in5 is not none else '-' }}</td>
+        <td>{{ r.out5 if r.out5 is not none else '-' }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

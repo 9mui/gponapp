@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% set title = "GPON App" %}
+{% set header = "GPON Monitoring" %}
+
+{% block content %}
+<h2 style="margin:0 0 14px 0">Список OLT</h2>
+
+<div class="actions" style="margin:0 0 12px 0; gap:10px">
+  <button class="btn soft-blue" type="button" onclick="toggleAddForm()">Добавить OLT</button>
+</div>
+
+<!-- Форма добавления OLT -->
+<div id="addForm" class="panel" style="display:none; margin-bottom:14px">
+  <div class="inner">
+    <form method="post" action="{{ url_for('add_olt') }}" data-loading
+          style="display:grid; gap:10px; grid-template-columns:repeat(4, minmax(0,1fr))">
+      <div>
+        <div class="muted" style="font-size:13px; margin-bottom:4px">Hostname</div>
+        <input name="hostname" required placeholder="например, OLT_20.14"
+               style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); color:#fff">
+      </div>
+      <div>
+        <div class="muted" style="font-size:13px; margin-bottom:4px">IP</div>
+        <input name="ip" required placeholder="172.25.20.14"
+               style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); color:#fff">
+      </div>
+      <div>
+        <div class="muted" style="font-size:13px; margin-bottom:4px">Community</div>
+        <input name="community" value="private"
+               style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); color:#fff">
+      </div>
+      <div>
+        <div class="muted" style="font-size:13px; margin-bottom:4px">Vendor</div>
+        <select name="vendor"
+                style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); color:#fff">
+          <option value="bdcom" selected>BDCOM</option>
+        </select>
+      </div>
+      <div style="grid-column:1 / -1; display:flex; gap:8px; justify-content:flex-end">
+        <button class="btn soft-blue" type="submit">Сохранить</button>
+        <button class="btn" type="button" onclick="toggleAddForm()">Отмена</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="panel" style="border:none; background:transparent; box-shadow:none; padding:0">
+  <table class="kv">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Hostname</th>
+        <th>IP</th>
+        <th>Vendor</th>
+        <th>Действия</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if olts and olts|length > 0 %}
+        {% for row in olts %}
+        <tr>
+          <td>{{ row.id }}</td>
+          <td>{{ row.hostname }}</td>
+          <td>{{ row.ip }}</td>
+          <td>{{ row.vendor }}</td>
+          <td class="row-actions">
+            <div class="left">
+              <a class="btn soft-blue wide" href="{{ url_for('olt', ip=row.ip) }}" data-loading>📦 Порты</a>
+              <a class="btn soft-blue" href="{{ url_for('olt_device', ip=row.ip) }}" data-loading>🔍 Обзор</a>
+            </div>
+            <div class="right">
+              <form method="post" action="{{ url_for('delete_olt', ip=row.ip) }}" data-loading
+                    onsubmit="return confirm('Удалить OLT {{ row.hostname }} ({{ row.ip }}) и связанные записи?')">
+                <button class="btn warn">🗑 Удалить</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="5" class="muted">Пока нет устройств. Нажми «Добавить OLT», чтобы создать запись.</td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  function toggleAddForm(){
+    const el = document.getElementById('addForm');
+    el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+  }
+</script>
+
+<style>
+  .btn{
+    display:inline-block;
+    border:1px solid #334b62;
+    border-radius:8px;
+    padding:8px 12px;
+    font-size:14px;
+    line-height:1.2;
+    cursor:pointer;
+    text-decoration:none;
+    text-align:center;
+    color:#cfe4ff;
+    background:#1e2a36;
+    white-space:nowrap;
+  }
+  .btn:hover{ background:#263545; }
+  .btn.soft-blue{ background:#1e2a36; color:#cfe4ff; border-color:#334b62; }
+  .btn.warn{ background:#dc3545; color:#fff; border-color:#dc3545; }
+  .btn.warn:hover{ background:#b52a38; border-color:#b52a38; }
+
+  .wide{
+    min-width:250px;
+    text-align:center;
+  }
+
+  .kv{
+    width:100%;
+    border-collapse:collapse;
+    font-size:17px;
+  }
+  .kv th, .kv td{
+    border:1px solid #2a2f3a;
+    padding:10px 12px;
+    text-align:left;
+    vertical-align:middle;
+  }
+  .kv thead th{ font-weight:600; color:#cbd5e1; }
+  .muted{ color:#9aa2af; }
+
+  .row-actions{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .row-actions .left{ display:flex; gap:8px; flex-wrap:wrap; }
+  .row-actions .right{ display:flex; }
+
+  @media (max-width: 560px){
+    .row-actions{
+      flex-direction:column;
+      align-items:stretch;
+      gap:6px;
+    }
+    .row-actions .left{ justify-content:space-between; }
+    .row-actions .right{ justify-content:flex-end; }
+  }
+</style>
+{% endblock %}

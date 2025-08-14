@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ title or "GPON App" }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0f172a; --panel:#111827; --card:#0b1222;
+      --muted:#94a3b8; --text:#e5e7eb; --accent:#22d3ee;
+      --shadow: 0 8px 30px rgba(0,0,0,.25); --radius:18px;
+    }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{
+      margin:0; font:16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Noto Sans", Arial;
+      color:var(--text); background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(34,211,238,.10), transparent 60%),
+        radial-gradient(1200px 600px at 110% 10%, rgba(99,102,241,.10), transparent 60%),
+        var(--bg);
+    }
+    a{color:var(--accent); text-decoration:none; transition:opacity .15s ease}
+    a:hover{text-decoration:underline; opacity:.9}
+
+    .container{max-width:1100px; margin:42px auto; padding:0 18px}
+    header{
+      display:flex; align-items:center; gap:14px; margin-bottom:22px;
+    }
+    .brand{display:flex; gap:12px; align-items:center}
+    .logo{
+      width:38px;height:38px;border-radius:12px;
+      background: linear-gradient(135deg, var(--accent), #6366f1);
+      box-shadow: var(--shadow);
+    }
+    .brand h1{margin:0; font-size:20px; letter-spacing:.3px}
+
+    .actions{display:flex; gap:8px; flex-wrap:wrap; margin-left:auto}
+
+    .btn{
+      appearance:none; border:none; cursor:pointer;
+      background:linear-gradient(180deg, rgba(34,211,238,.22), rgba(34,211,238,.12));
+      border:1px solid rgba(34,211,238,.35);
+      color:#e6fbff; padding:8px 12px; border-radius:12px; font-weight:650; font-size:14px;
+      box-shadow: var(--shadow); text-decoration:none; display:inline-block;
+      transition: transform .06s ease, filter .15s ease, background .2s ease, border-color .2s ease;
+    }
+    .btn:hover{transform: translateY(-1px); filter: saturate(1.1)}
+    .btn:active{transform: translateY(0)}
+    .btn.warn{
+      background:linear-gradient(180deg, rgba(239,68,68,.22), rgba(239,68,68,.12));
+      border-color:rgba(239,68,68,.35)
+    }
+    .btn.soft{
+      background:linear-gradient(180deg, rgba(148,163,184,.18), rgba(148,163,184,.10));
+      border-color: rgba(148,163,184,.35);
+      color:#e5e7eb;
+    }
+
+    .search{display:flex; gap:8px; flex:1; max-width:520px}
+    .search input{
+      flex:1; padding:10px 12px; border-radius:10px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.06); color:#fff;
+      outline:none; transition: box-shadow .2s ease, border-color .2s ease, background .2s ease;
+    }
+    .search input::placeholder{color:#9aa7b6}
+    .search input:focus{
+      border-color: rgba(34,211,238,.55);
+      box-shadow: 0 0 0 3px rgba(34,211,238,.18);
+      background: rgba(255,255,255,.08);
+    }
+
+    .panel{
+      background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:var(--radius); box-shadow: var(--shadow); overflow:hidden;
+      backdrop-filter: blur(2px);
+    }
+    .inner{padding:20px}
+    h2{margin:0 0 14px 0}
+
+    table{width:100%; border-collapse:separate; border-spacing:0}
+    thead th{
+      text-align:left; font-weight:700; font-size:13px; color:var(--muted);
+      padding:12px 14px; background:rgba(255,255,255,.03);
+      position:sticky; top:0; z-index:1;
+    }
+    tbody td{padding:12px 14px; border-top:1px solid rgba(255,255,255,.06)}
+    tbody tr{transition: background .15s ease}
+    tbody tr:hover{background:rgba(255,255,255,.03)}
+    tbody tr:nth-child(odd){background:rgba(255,255,255,.01)}
+    .flash{margin:10px 0; padding:10px 12px; background:rgba(99,102,241,.12); border:1px solid rgba(99,102,241,.35); border-radius:12px}
+
+    /* --------- Глобальный лоадер --------- */
+    #loading-overlay{
+      position:fixed; inset:0;
+      background: rgba(10,15,22,.78);
+      display:none; align-items:center; justify-content:center;
+      z-index: 9999; backdrop-filter: blur(2px);
+    }
+    .loader{
+      width:74px;height:74px;border-radius:50%;
+      border:6px solid rgba(255,255,255,.15);
+      border-top-color:#4ea3ff;
+      animation:spin .9s linear infinite;
+      box-shadow:0 0 0 1px rgba(255,255,255,.05) inset;
+      margin:0 auto;
+    }
+    .loader-text{margin-top:12px; text-align:center; color:#cbd5e1; font-size:14px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="logo"></div>
+        <h1>{{ header or "GPON Monitoring" }}</h1>
+      </div>
+
+      <!-- Поиск SN доступен везде -->
+      <form class="search" method="post" action="{{ url_for('search') }}" data-loading>
+        <input type="text" name="q" placeholder="Поиск ONU по SN (16 HEX) — напр. 47504F4E00451546">
+        <button class="btn">Найти</button>
+      </form>
+
+      <!-- Кнопка Главная доступна везде -->
+      <a class="btn soft" href="{{ url_for('home') }}" data-loading>Главная</a>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="flash">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="panel">
+      <div class="inner">
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Лоадер-оверлей -->
+  <div id="loading-overlay" aria-hidden="true">
+    <div>
+      <div class="loader" role="progressbar" aria-label="Загрузка"></div>
+      <div class="loader-text">Идёт поиск…</div>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      const overlay = document.getElementById('loading-overlay');
+      function showLoader() {
+        if (overlay) overlay.style.display = 'flex';
+      }
+
+      function hideLoader() {
+        if (overlay) overlay.style.display = 'none';
+      }
+
+      document.addEventListener('submit', function (e) {
+        const form = e.target;
+        if (form && form.hasAttribute('data-loading')) showLoader();
+      }, true);
+
+      document.addEventListener('click', function (e) {
+        const btn = e.target.closest('button, input[type="submit"]');
+        if (!btn) return;
+        const form = btn.form;
+        if (form && form.hasAttribute('data-loading')) showLoader();
+      }, true);
+
+      window.addEventListener('pageshow', function (e) {
+        hideLoader();
+      });
+
+      window.addEventListener('load', hideLoader);
+      document.addEventListener('DOMContentLoaded', hideLoader);
+
+      window.addEventListener('popstate', hideLoader);
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') hideLoader();
+      });
+    })();
+  </script>
+</body>
+</html>

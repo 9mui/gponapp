@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 style="display: flex; align-items: center; justify-content: space-between;">
+  <span>{{ ip }} — {{ port_name }}</span>
+  <form method="post" action="{{ url_for('port_bounce', ip=ip, ifindex=ifindex) }}"
+        onsubmit="return confirm('Перезагрузить (down→up) этот PON-порт?')"
+        style="margin: 0;">
+    <button class="btn warn" style="padding: 6px 12px; font-size: 0.9rem;">Перезагрузить порт</button>
+  </form>
+</h2>
+
+<p>
+  Статус порта:
+  {% if port_status == 1 %}UP{% elif port_status == 2 %}DOWN{% else %}-{% endif %} |
+  PON TX: {{ pon_tx if pon_tx is not none else "-" }} dBm |
+  PON RX: {{ pon_rx if pon_rx is not none else "-" }} dBm
+</p>
+
+
+<style>
+  .btn {
+    display: inline-block;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 14px;
+    cursor: pointer;
+    text-decoration: none;
+    text-align: center;
+  }
+  .btn.warn {
+    background: #dc3545;
+    color: #fff;
+  }
+  .btn.warn:hover {
+    background: #b52a38;
+  }
+  .btn.export-btn {
+    background: #e0f2ff; /* мягкий голубой */
+    color: #0b3d91;
+    border: 1px solid #b3daff;
+  }
+  .btn.export-btn:hover {
+    background: #cde9ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    .btn.export-btn {
+      background: #1e2a36;
+      color: #cce4ff;
+      border-color: #334b62;
+    }
+    .btn.export-btn:hover {
+      background: #263545;
+    }
+  }
+</style>
+{% if onus %}
+<table>
+  <thead>
+    <tr>
+      <th>Serial Number</th>
+      <th>ONU-ID</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for sn, onuid in onus %}
+    <tr>
+      <td><a href="{{ url_for('onu_by_sn', sn=sn) }}">{{ sn }}</a></td>
+      <td>{{ onuid }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<style>
+  table {
+    border-collapse: collapse;
+    width: 80%;
+    font-family: sans-serif;
+    font-size: 17px;
+  }
+  th, td {
+    border: 1px solid #ccc;
+    padding: 6px 10px;
+    text-align: left;
+  }
+  @media (prefers-color-scheme: dark) {
+    th, td {
+      border-color: #444;
+      color: #ddd;
+    }
+  }
+</style>
+{% else %}
+<p>На этом порту ONU не найдены.</p>
+{% endif %}
+{% endblock %}

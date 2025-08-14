@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% set title = "Обзор устройства" %}
+{% set header = "Обзор устройства" %}
+
+{% block content %}
+<h2 style="margin:0 0 14px 0">{{ hostname }} <span class="muted">({{ ip }})</span></h2>
+
+<div style="display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; margin-bottom:10px">
+  <div class="panel"><div class="inner"><div class="muted">System Name</div><div style="font-weight:700">{{ sys_name or "—" }}</div></div></div>
+  <div class="panel"><div class="inner"><div class="muted">Location</div><div style="font-weight:700">{{ sys_loc or "—" }}</div></div></div>
+  <div class="panel"><div class="inner"><div class="muted">Contact</div><div style="font-weight:700">{{ sys_cont or "—" }}</div></div></div>
+  <div class="panel"><div class="inner"><div class="muted">Device Time</div><div style="font-weight:700">{{ sys_time or "—" }}</div></div></div>
+  <div class="panel"><div class="inner"><div class="muted">Uptime</div><div style="font-weight:700">{{ uptime_hms }}</div></div></div>
+  <div class="panel"><div class="inner"><div class="muted">CPU %</div><div style="font-weight:700">{{ cpu if cpu is not none else "—" }}</div></div></div>
+  <div class="panel"><div class="inner"><div class="muted">Memory %</div><div style="font-weight:700">{{ mem if mem is not none else "—" }}</div></div></div>
+  <div class="panel"><div class="inner"><div class="muted">Temperature °C</div><div style="font-weight:700">{{ temp if temp is not none else "—" }}</div></div></div>
+</div>
+
+<div class="panel" style="margin-top:12px">
+  <div class="inner">
+    <div class="muted" style="margin-bottom:8px">Описание устройства</div>
+    <pre style="margin:0; white-space:pre-wrap">{{ sys_descr or "—" }}</pre>
+  </div>
+</div>
+{% endblock %}

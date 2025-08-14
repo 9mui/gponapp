@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>OLTs</h2>
+<form method="post" action="{{ url_for('add_olt') }}" class="card">
+  <label>Hostname <input name="hostname" required></label>
+  <label>IP <input name="ip" required></label>
+  <label>Community <input name="community" value="private" required></label>
+  <label>Vendor
+    <select name="vendor">
+      <option value="bdcom">BDCOM</option>
+      <option value="huawei">Huawei</option>
+    </select>
+  </label>
+  <button>Добавить</button>
+</form>
+
+<table>
+  <thead><tr><th>ID</th><th>Hostname</th><th>IP</th><th>Community</th><th>Vendor</th><th></th></tr></thead>
+  <tbody>
+  {% for id, hn, ip, com, vendor in rows %}
+    <tr>
+      <td>{{ id }}</td>
+      <td><a href="{{ url_for('olt', ip=ip) }}">{{ hn }}</a></td>
+      <td>{{ ip }}</td>
+      <td>{{ com }}</td>
+      <td>{{ vendor }}</td>
+      <td>
+        <form method="post" action="{{ url_for('olt_refresh', ip=ip) }}">
+          <button>Обновить данные</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
