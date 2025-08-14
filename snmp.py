@@ -32,6 +32,15 @@ def _fmt_value(val) -> str:
     return val.prettyPrint()
 
 
+IDX_RE = re.compile(r"\.(\d+)\.(\d+)\s*=\s*STRING:\s*\"?([^\"]+)\"?$", re.IGNORECASE)
+
+# Используем snmpbulkwalk + стабильный вывод и «продолжение» при OID not increasing.
+SNMP_WALK_CMD  = "snmpbulkwalk"
+SNMP_WALK_OPTS = ["-v2c", "-On", "-OXs", "-Cc", "-Cr50"]  # числовые OID, компактные типы, continue, bulk
+SNMP_SET_OPTS  = ["-v2c", "-On", "-OXs"]                  # set: формат не критичен, но пусть будет единый
+=======
+
+
 def snmpwalk(host: str, community: str, oid: str, timeout=2) -> list[str]:
     """Walk single OID subtree using pysnmp without spawning processes."""
     engine = SnmpEngine()
@@ -230,6 +239,11 @@ def parse_ifname(lines: list[str]) -> list[tuple[str,str]]:
         if m: res.append((m.group(1), m.group(2)))
     return res
 
+
+def ascii4_to_hex(s4: str) -> str:
+    # "BDCM" -> "4244434D"
+    return "".join(f"{ord(c):02X}" for c in s4[:4])
+
 def parse_gpon_bind(lines):
     """
     Разбирает строки snmpwalk по веткам с привязками ONU:
@@ -241,14 +255,9 @@ def parse_gpon_bind(lines):
     """
     out = []
     # шаблон индексов: ... .<ifIndex>.<onuId> = STRING: "<SN>"
-    idx_re = re.compile(r"\.(\d+)\.(\d+)\s*=\s*STRING:\s*\"?([^\"]+)\"?$", re.IGNORECASE)
-
-    def ascii4_to_hex(s4: str) -> str:
-        # "BDCM" -> "4244434D"
-        return "".join(f"{ord(c):02X}" for c in s4[:4])
 
     for ln in lines or []:
-        m = idx_re.search(ln)
+        m = IDX_RE.search(ln)
         if not m:
             continue
         ifi, onuid, raw = m.group(1), m.group(2), (m.group(3) or "").strip()
