@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS gpon (
   olt_ip  TEXT NOT NULL,
   portonu TEXT NOT NULL,    -- ifIndex
   idonu   TEXT NOT NULL,    -- ONU ID
-  snonu   TEXT NOT NULL     -- Serial (uppercase)
+  snonu   TEXT NOT NULL,    -- Serial (uppercase)
+  comment1 TEXT,
+  comment2 TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS gpon_uq ON gpon(olt_ip, portonu, idonu);
 
