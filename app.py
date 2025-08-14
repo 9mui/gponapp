@@ -3,13 +3,13 @@ from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, render_template, request, redirect, url_for, abort, Response, flash
 from models import db, ensure_db
 from snmp import (
-    snmpwalk, snmpwalk_bulk, snmpset, first_int, first_str,
+
     OID_IFNAME, OID_IF_DESCR, OID_IF_ALIAS, OID_IF_OPER_STATUS, OID_IF_ADMIN_STATUS,
     OID_IF_IN_5M_BIT, OID_IF_OUT_5M_BIT,
     OID_GPON_BIND_SN, OID_GPON_STATUS, OID_GPON_ONU_RX, OID_GPON_ONU_TX,
     OID_GPON_ONU_VENDOR, OID_GPON_ONU_SW_A, OID_GPON_ONU_SW_B, OID_GPON_ONU_DIST, OID_GPON_ONU_LASTDN,
     OID_GPON_ONU_SN_TAB, OID_PON_PORT_TX, OID_PON_PORT_RX,
-    OID_SYS_NAME, OID_SYS_LOCATION, OID_SYS_CONTACT, OID_SYS_DESCR, OID_SYS_UPTIME_TICK, OID_SYS_TIME_STR,
+    OID_SYS_NAME, OID_SYS_LOCATION, OID_SYS_CONTACT, OID_SYS_DESCR, OID_SYS_TIME_STR,
     OID_CPU_USAGE, OID_MEM_USAGE, OID_TEMP_BOARD, OID_OLT_REBOOT,
     parse_ifname, parse_gpon_bind, find_glob_idx_by_sn, OFFLINE_REASON
 )
@@ -33,21 +33,6 @@ def ticks_to_hms(ticks: int | None) -> str:
     m = (sec % 3600) // 60
     s = sec % 60
     return f"{d}d {h:02}:{m:02}:{s:02}"
-
-def get_sys_uptime_ticks(ip: str, community: str) -> int | None:
-    """
-    Возвращает sysUpTime в тиках (1 тик = 1/100 сек).
-    Пробуем стандартный sysUpTime.0 и запасной hrSystemUptime.0.
-    Парсим ТОЛЬКО число в скобках после 'Timeticks:'.
-    """
-    for oid in ("1.3.6.1.2.1.1.3.0",      # sysUpTime.0
-                "1.3.6.1.2.1.25.1.1.0"):  # hrSystemUptime.0 (fallback)
-        lines = snmpwalk(ip, community, oid) or []
-        for ln in lines:
-            m = re.search(r"Timeticks:\s*\((\d+)\)", ln)
-            if m:
-                return int(m.group(1))
-    return None
 
 def get_cpu_percent(ip: str, community: str) -> int | None:
     lines = snmpwalk(ip, community, "1.3.6.1.2.1.25.3.3.1.2")  # hrProcessorLoad
