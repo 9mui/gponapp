@@ -7,3 +7,8 @@ __pycache__/
 .env
 .idea/
 .DS_Store
+instance/*.db*
+*.sqlite*
+*.db
+*.db-shm
+*.db-wal
