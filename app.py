@@ -1,15 +1,11 @@
 
 import re, csv, io, time, sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, render_template, request, redirect, url_for, abort, Response, flash, g
 from models import ensure_db, DB
-=======
-import re, csv, io, time
-from concurrent.futures import ThreadPoolExecutor
-from flask import Flask, render_template, request, redirect, url_for, abort, Response, flash
-from models import db, ensure_db
 
 from snmp import (
-
+    snmpwalk, snmpwalk_bulk, snmpset, get_sys_uptime_ticks, first_int, first_str,
     OID_IFNAME, OID_IF_DESCR, OID_IF_ALIAS, OID_IF_OPER_STATUS, OID_IF_ADMIN_STATUS,
     OID_IF_IN_5M_BIT, OID_IF_OUT_5M_BIT,
     OID_GPON_BIND_SN, OID_GPON_STATUS, OID_GPON_ONU_RX, OID_GPON_ONU_TX,
@@ -181,20 +177,6 @@ def olt_device(ip):
     row = conn.execute("SELECT hostname, community FROM olts WHERE ip = ?", (ip,)).fetchone()
     if not row: abort(404)
     hostname, community = row
-    sys_name   = first_str(snmpwalk(ip, community, OID_SYS_NAME))
-    sys_loc    = first_str(snmpwalk(ip, community, OID_SYS_LOCATION))
-    sys_cont   = first_str(snmpwalk(ip, community, OID_SYS_CONTACT))
-    sys_descr  = first_str(snmpwalk(ip, community, OID_SYS_DESCR))
-    sys_time   = first_str(snmpwalk(ip, community, OID_SYS_TIME_STR))
-    uptime     = get_sys_uptime_ticks(ip, community)
-    cpu        = get_cpu_percent(ip, community)
-    mem        = first_int(snmpwalk(ip, community, OID_MEM_USAGE))
-    temp       = first_int(snmpwalk(ip, community, OID_TEMP_BOARD))
-=======
-    with db() as conn:
-        row = conn.execute("SELECT hostname, community FROM olts WHERE ip = ?", (ip,)).fetchone()
-        if not row: abort(404)
-        hostname, community = row
     bulk_oids = [
         OID_SYS_NAME, OID_SYS_LOCATION, OID_SYS_CONTACT,
         OID_SYS_DESCR, OID_SYS_TIME_STR, OID_MEM_USAGE, OID_TEMP_BOARD,
@@ -235,6 +217,17 @@ def olt_uplinks(ip):
     descrs = bulk_if.get(OID_IF_DESCR, [])
     alias  = bulk_if.get(OID_IF_ALIAS, [])
     status = bulk_if.get(OID_IF_OPER_STATUS, [])
+    rate_bulk = snmpwalk_bulk(ip, community, [OID_IF_IN_5M_BIT, OID_IF_OUT_5M_BIT])
+    in5_lines  = rate_bulk.get(OID_IF_IN_5M_BIT, [])
+    out5_lines = rate_bulk.get(OID_IF_OUT_5M_BIT, [])
+    map_in5: dict[str, int] = {}
+    map_out5: dict[str, int] = {}
+    for ln in in5_lines:
+        m = re.search(r"\.(\d+)\s*=\s*INTEGER:\s*(\d+)", ln)
+        if m: map_in5[m.group(1)] = int(m.group(2))
+    for ln in out5_lines:
+        m = re.search(r"\.(\d+)\s*=\s*INTEGER:\s*(\d+)", ln)
+        if m: map_out5[m.group(1)] = int(m.group(2))
 
     def parse_map(pattern, lines):
         m = {}
@@ -255,15 +248,14 @@ def olt_uplinks(ip):
     for ifi, name in map_name.items():
         if name.startswith("GPON"):  # аплинки ≠ gpon
             continue
-        in5  = first_int(snmpwalk(ip, community, f"{OID_IF_IN_5M_BIT}.{ifi}"))
-        out5 = first_int(snmpwalk(ip, community, f"{OID_IF_OUT_5M_BIT}.{ifi}"))
         rows.append({
             "ifindex": ifi,
             "name": name,
             "descr": map_descr.get(ifi) or "",
             "alias": map_alias.get(ifi) or "",
             "oper": map_oper.get(ifi),
-            "in5": in5, "out5": out5
+            "in5": map_in5.get(ifi),
+            "out5": map_out5.get(ifi),
         })
     rows.sort(key=lambda r: int(r["ifindex"]))
     return render_template("uplinks.html", ip=ip, hostname=hostname, rows=rows)
@@ -282,19 +274,6 @@ def port(ip, ifindex):
         (ip, ifindex)
     ).fetchall()
     comm = conn.execute("SELECT community FROM olts WHERE ip = ?", (ip,)).fetchone()[0]
-    tx = first_int(snmpwalk(ip, comm, f"{OID_PON_PORT_TX}.{ifindex}"))
-    rx = first_int(snmpwalk(ip, comm, f"{OID_PON_PORT_RX}.{ifindex}"))
-    stat = first_int(snmpwalk(ip, comm, f"{OID_IF_OPER_STATUS}.{ifindex}"))
-=======
-    with db() as conn:
-        row = conn.execute("SELECT name FROM ponports WHERE olt_ip = ? AND ifindex = ?", (ip, ifindex)).fetchone()
-        if not row: abort(404)
-        port_name = row[0]
-        onus = conn.execute(
-            "SELECT snonu, idonu FROM gpon WHERE olt_ip = ? AND portonu = ? ORDER BY CAST(idonu AS INT)",
-            (ip, ifindex)
-        ).fetchall()
-        comm = conn.execute("SELECT community FROM olts WHERE ip = ?", (ip,)).fetchone()[0]
     bulk = snmpwalk_bulk(
         ip,
         comm,
