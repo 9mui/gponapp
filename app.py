@@ -1,8 +1,9 @@
 import re, csv, io, time
+from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, render_template, request, redirect, url_for, abort, Response, flash
 from models import db, ensure_db
 from snmp import (
-    snmpwalk, snmpset, first_int, first_str, get_sys_uptime_ticks,
+
     OID_IFNAME, OID_IF_DESCR, OID_IF_ALIAS, OID_IF_OPER_STATUS, OID_IF_ADMIN_STATUS,
     OID_IF_IN_5M_BIT, OID_IF_OUT_5M_BIT,
     OID_GPON_BIND_SN, OID_GPON_STATUS, OID_GPON_ONU_RX, OID_GPON_ONU_TX,
@@ -157,15 +158,24 @@ def olt_device(ip):
         row = conn.execute("SELECT hostname, community FROM olts WHERE ip = ?", (ip,)).fetchone()
         if not row: abort(404)
         hostname, community = row
-    sys_name   = first_str(snmpwalk(ip, community, OID_SYS_NAME))
-    sys_loc    = first_str(snmpwalk(ip, community, OID_SYS_LOCATION))
-    sys_cont   = first_str(snmpwalk(ip, community, OID_SYS_CONTACT))
-    sys_descr  = first_str(snmpwalk(ip, community, OID_SYS_DESCR))
-    sys_time   = first_str(snmpwalk(ip, community, OID_SYS_TIME_STR))
-    uptime     = get_sys_uptime_ticks(ip, community)
-    cpu        = get_cpu_percent(ip, community)
-    mem        = first_int(snmpwalk(ip, community, OID_MEM_USAGE))
-    temp       = first_int(snmpwalk(ip, community, OID_TEMP_BOARD))
+    bulk_oids = [
+        OID_SYS_NAME, OID_SYS_LOCATION, OID_SYS_CONTACT,
+        OID_SYS_DESCR, OID_SYS_TIME_STR, OID_MEM_USAGE, OID_TEMP_BOARD,
+    ]
+    with ThreadPoolExecutor() as ex:
+        fut_bulk = ex.submit(snmpwalk_bulk, ip, community, bulk_oids)
+        fut_uptime = ex.submit(get_sys_uptime_ticks, ip, community)
+        fut_cpu = ex.submit(get_cpu_percent, ip, community)
+        bulk_res = fut_bulk.result()
+        uptime = fut_uptime.result()
+        cpu = fut_cpu.result()
+    sys_name   = first_str(bulk_res.get(OID_SYS_NAME))
+    sys_loc    = first_str(bulk_res.get(OID_SYS_LOCATION))
+    sys_cont   = first_str(bulk_res.get(OID_SYS_CONTACT))
+    sys_descr  = first_str(bulk_res.get(OID_SYS_DESCR))
+    sys_time   = first_str(bulk_res.get(OID_SYS_TIME_STR))
+    mem        = first_int(bulk_res.get(OID_MEM_USAGE))
+    temp       = first_int(bulk_res.get(OID_TEMP_BOARD))
     return render_template("olt_device.html",
                            ip=ip, hostname=hostname,
                            sys_name=sys_name, sys_loc=sys_loc, sys_cont=sys_cont,
@@ -182,10 +192,11 @@ def olt_uplinks(ip):
         if not row: abort(404)
         hostname, community = row
 
-    names  = snmpwalk(ip, community, OID_IFNAME)
-    descrs = snmpwalk(ip, community, OID_IF_DESCR)
-    alias  = snmpwalk(ip, community, OID_IF_ALIAS)
-    status = snmpwalk(ip, community, OID_IF_OPER_STATUS)
+    bulk_if = snmpwalk_bulk(ip, community, [OID_IFNAME, OID_IF_DESCR, OID_IF_ALIAS, OID_IF_OPER_STATUS])
+    names  = bulk_if.get(OID_IFNAME, [])
+    descrs = bulk_if.get(OID_IF_DESCR, [])
+    alias  = bulk_if.get(OID_IF_ALIAS, [])
+    status = bulk_if.get(OID_IF_OPER_STATUS, [])
 
     def parse_map(pattern, lines):
         m = {}
@@ -232,9 +243,18 @@ def port(ip, ifindex):
             (ip, ifindex)
         ).fetchall()
         comm = conn.execute("SELECT community FROM olts WHERE ip = ?", (ip,)).fetchone()[0]
-    tx = first_int(snmpwalk(ip, comm, f"{OID_PON_PORT_TX}.{ifindex}"))
-    rx = first_int(snmpwalk(ip, comm, f"{OID_PON_PORT_RX}.{ifindex}"))
-    stat = first_int(snmpwalk(ip, comm, f"{OID_IF_OPER_STATUS}.{ifindex}"))
+    bulk = snmpwalk_bulk(
+        ip,
+        comm,
+        [
+            f"{OID_PON_PORT_TX}.{ifindex}",
+            f"{OID_PON_PORT_RX}.{ifindex}",
+            f"{OID_IF_OPER_STATUS}.{ifindex}",
+        ],
+    )
+    tx = first_int(bulk.get(f"{OID_PON_PORT_TX}.{ifindex}"))
+    rx = first_int(bulk.get(f"{OID_PON_PORT_RX}.{ifindex}"))
+    stat = first_int(bulk.get(f"{OID_IF_OPER_STATUS}.{ifindex}"))
     def dbm(x): return None if x is None else x/10.0
     return render_template("port_onus.html",
                            ip=ip, port_name=port_name, ifindex=ifindex, onus=onus,
