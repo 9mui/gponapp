@@ -17,3 +17,8 @@ instance/*.db*
 *.db
 *.db-shm
 *.db-wal
+instance/*.db*
+*.sqlite*
+*.db
+*.db-shm
+*.db-wal
