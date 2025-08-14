@@ -20,9 +20,19 @@ ensure_db()
 # --- доп. константа: reset ONU (admin reset) ---
 OID_ONU_RESET = "1.3.6.1.4.1.3320.10.3.2.1.4"
 
-# --- утилиты ---
+# --- нормализация SN (с учётом префиксов и "мусора") ---
+HEX16_RE = re.compile(r"[0-9A-F]{16}")
 def norm_sn(s: str) -> str:
-    return re.sub(r"[^0-9A-F]", "", (s or "").upper())
+    """
+    Убираем префиксы вида BDCM:XXXX / TPLG:XXXX, оставляем 16 HEX.
+    Если в строке больше 16 HEX — берём последние 16 (часто встречается в выводе snmpwalk).
+    """
+    s = (s or "").strip().upper()
+    if ":" in s and len(s.split(":", 1)[1]) >= 16:
+        s = s.split(":", 1)[1]
+    s = re.sub(r"[^0-9A-F]", "", s)
+    m = HEX16_RE.search(s)
+    return m.group(0) if m else s[-16:]
 
 def ticks_to_hms(ticks: int | None) -> str:
     if ticks is None: return "-"
@@ -66,10 +76,13 @@ def meters_from_dm(raw):
     except Exception:
         return None
 
+# -------------------- работа с кэшем OLT/ONU --------------------
+
 def refresh_olt_cache(ip: str) -> bool:
     """
     Переопрашивает один OLT и обновляет кэш ponports/gpon в БД.
-    Возвращает True, если получилось.
+    Учитывает уникальный индекс по нормализованному SN: перед вставкой
+    удаляет все старые записи с тем же SN (на других OLT в том числе).
     """
     with db() as conn:
         got = conn.execute("SELECT community FROM olts WHERE ip = ?", (ip,)).fetchone()
@@ -88,13 +101,57 @@ def refresh_olt_cache(ip: str) -> bool:
 
         # GPON привязки (порт, onu-id, SN) -> gpon
         binds = parse_gpon_bind(snmpwalk(ip, community, OID_GPON_BIND_SN))
+        # чистим только кэш привязок для этого OLT (как и раньше)
         conn.execute("DELETE FROM gpon WHERE olt_ip = ?", (ip,))
+
         for ifi, onuid, sn in binds:
+            sn_norm = norm_sn(sn)
+            # ВАЖНО: удалить возможные старые записи с тем же SN на любых OLT,
+            # чтобы не нарушить UNIQUE(ux_gpon_sn_norm)
             conn.execute(
-                "INSERT OR REPLACE INTO gpon(olt_ip, portonu, idonu, snonu) VALUES(?,?,?,?)",
+                "DELETE FROM gpon WHERE REPLACE(UPPER(snonu),' ','') = ?",
+                (sn_norm,)
+            )
+            # затем вставить актуальную запись
+            conn.execute(
+                "INSERT INTO gpon(olt_ip, portonu, idonu, snonu) VALUES(?,?,?,?)",
                 (ip, ifi, onuid, sn)
             )
     return True
+
+def scan_sn_on_olt(ip: str, community: str, sn_hex16: str):
+    """
+    Быстрый поиск SN на конкретном OLT по таблице привязок (snmpwalk OID_GPON_BIND_SN).
+    Возвращает (port_ifindex, onuid) или None.
+    """
+    try:
+        lines = snmpwalk(ip, community, OID_GPON_BIND_SN)
+    except Exception:
+        return None
+    target = norm_sn(sn_hex16)
+    for ifi, onuid, raw_sn in parse_gpon_bind(lines):
+        if norm_sn(raw_sn) == target:
+            return (ifi, onuid)
+    return None
+
+def resolve_onu_location(sn_hex16: str):
+    """
+    Сканирует ВСЕ OLT из таблицы olts и возвращает (olt_ip, community, port_if, onuid) при нахождении.
+    Попутно обновляет таблицу gpon: удаляет старые записи по этому snonu и вставляет новую.
+    """
+    sn = norm_sn(sn_hex16)
+    with db() as conn:
+        olts = conn.execute("SELECT ip, community FROM olts ORDER BY id").fetchall()
+    for ip, comm in olts:
+        found = scan_sn_on_olt(ip, comm, sn)
+        if found:
+            port_if, onuid = found
+            with db() as conn:
+                conn.execute("DELETE FROM gpon WHERE REPLACE(UPPER(snonu),' ','') = ?", (sn,))
+                conn.execute("INSERT INTO gpon(olt_ip, portonu, idonu, snonu) VALUES(?,?,?,?)",
+                             (ip, port_if, onuid, sn))
+            return ip, comm, port_if, onuid
+    return None
 
 # ---------- Главная / поиск ----------
 
@@ -112,10 +169,24 @@ def search():
         return redirect(request.referrer or url_for("home"))
     hexs = re.findall(r"[0-9A-Fa-f]", q)
     sn = "".join(hexs[-16:]).upper() if len(hexs) >= 16 else None
-    if sn:
+    if not sn:
+        flash("Введите корректный SN (16 HEX символов)", "info")
+        return redirect(request.referrer or url_for("home"))
+
+    # Сначала по БД
+    with db() as conn:
+        row = conn.execute("""
+            SELECT olt_ip FROM gpon WHERE REPLACE(UPPER(snonu),' ','') = ? LIMIT 1
+        """, (sn,)).fetchone()
+    if row:
         return redirect(url_for("onu_by_sn", sn=sn))
-    flash("Введите корректный SN (16 HEX символов)", "info")
-    return redirect(request.referrer or url_for("home"))
+
+    # Если нет — сразу авто-скан по всем OLT (починка "переезда")
+    resolved = resolve_onu_location(sn)
+    if resolved:
+        return redirect(url_for("onu_by_sn", sn=sn))
+
+    return render_template("not_found.html", q=sn)
 
 # список/добавление OLT
 @app.get("/olts")
@@ -325,8 +396,10 @@ def onu_by_sn(sn):
         with db() as conn:
             olts = [r[0] for r in conn.execute("SELECT ip FROM olts").fetchall()]
         for ip_ in olts:
-            try: refresh_olt_cache(ip_)
-            except Exception: pass
+            try:
+                refresh_olt_cache(ip_)
+            except Exception:
+                pass
         with db() as conn:
             row = conn.execute("""
                 SELECT olt_ip, portonu, idonu
@@ -336,11 +409,22 @@ def onu_by_sn(sn):
             """, (sn,)).fetchone()
 
     if not row:
-        return render_template("not_found.html", q=sn)
-
-    olt_ip, port_if, onuid_port = row
-    with db() as conn:
-        community = conn.execute("SELECT community FROM olts WHERE ip = ?", (olt_ip,)).fetchone()[0]
+        # как последний шанс — глобальный scan и фиксация местоположения
+        resolved = resolve_onu_location(sn)
+        if not resolved:
+            return render_template("not_found.html", q=sn)
+        olt_ip, community, port_if, onuid_port = resolved
+    else:
+        olt_ip, port_if, onuid_port = row
+        with db() as conn:
+            community = conn.execute("SELECT community FROM olts WHERE ip = ?", (olt_ip,)).fetchone()[0]
+        # проверим, что ONU действительно на этом OLT
+        still_here = scan_sn_on_olt(olt_ip, community, sn)
+        if not still_here:
+            resolved = resolve_onu_location(sn)
+            if not resolved:
+                return render_template("not_found.html", q=sn)
+            olt_ip, community, port_if, onuid_port = resolved
 
     # имя порта и UNI
     with db() as conn:
@@ -383,20 +467,16 @@ def onu_by_sn(sn):
     dist_dm  = first_non_none_int(OID_GPON_ONU_DIST)      # дециметры
     lastdn   = first_non_none_int(OID_GPON_ONU_LASTDN)
 
-    # --- НОВОЕ: статусы LAN (UNI) портов ONU ---
-    # OID Per ONU LAN Status: 1.3.6.1.4.1.3320.10.4.1.1.4
-    # Пробуем индексацию <globIdx>.<uni> и <uni>.<globIdx> для портов 1..4
+    # --- статусы LAN (UNI) портов ONU ---
+    # Per ONU LAN Status: 1.3.6.1.4.1.3320.10.4.1.1.4.{globIdx}.{uni} (или наоборот)
     def onu_lan_statuses(max_uni=4):
         results = []
         for uni_port in range(1, max_uni + 1):
             val = None
             if glob_idx:
-                # вариант A: .<globIdx>.<uni>
                 val = first_int(snmpwalk(olt_ip, community, f"1.3.6.1.4.1.3320.10.4.1.1.4.{glob_idx}.{uni_port}"))
                 if val is None:
-                    # вариант B: .<uni>.<globIdx>
                     val = first_int(snmpwalk(olt_ip, community, f"1.3.6.1.4.1.3320.10.4.1.1.4.{uni_port}.{glob_idx}"))
-            # нормализация
             if val == 1:
                 txt = "up"
             elif val == 2:
@@ -420,7 +500,7 @@ def onu_by_sn(sn):
         port_name_full=port_name_full, uni_ifindex=uni_ifindex,
         status=status, rx=dbm(rx_raw), tx=dbm(tx_raw),
         vendor=vendor, distance=distance, last_down=lastdn_txt,
-        lan_list=lan_list  # <- добавили в шаблон
+        lan_list=lan_list
     )
 
 # перезагрузка ONU по SN
@@ -434,14 +514,19 @@ def onu_reboot(sn):
             LIMIT 1
         """, (sn_norm,)).fetchone()
         if not row:
-            flash(f"ONU {sn_norm} не найдена в БД", "error")
-            return redirect(url_for("home"))
-        olt_ip = row[0]
-        comm_row = conn.execute("SELECT community FROM olts WHERE ip = ?", (olt_ip,)).fetchone()
-        if not comm_row:
-            flash(f"Не найдено community для OLT {olt_ip}", "error")
-            return redirect(url_for("home"))
-        community = comm_row[0]
+            # Попробуем найти актуально и починить БД
+            resolved = resolve_onu_location(sn_norm)
+            if not resolved:
+                flash(f"ONU {sn_norm} не найдена", "error")
+                return redirect(url_for("home"))
+            olt_ip, community, _, _ = resolved
+        else:
+            olt_ip = row[0]
+            comm_row = conn.execute("SELECT community FROM olts WHERE ip = ?", (olt_ip,)).fetchone()
+            if not comm_row:
+                flash(f"Не найдено community для OLT {olt_ip}", "error")
+                return redirect(url_for("home"))
+            community = comm_row[0]
 
     glob_idx = find_glob_idx_by_sn(olt_ip, community, sn_norm)
     if not glob_idx:
