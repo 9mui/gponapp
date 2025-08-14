@@ -1,7 +1,13 @@
+
+import re, csv, io, time, sqlite3
+from flask import Flask, render_template, request, redirect, url_for, abort, Response, flash, g
+from models import ensure_db, DB
+=======
 import re, csv, io, time
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, render_template, request, redirect, url_for, abort, Response, flash
 from models import db, ensure_db
+
 from snmp import (
 
     OID_IFNAME, OID_IF_DESCR, OID_IF_ALIAS, OID_IF_OPER_STATUS, OID_IF_ADMIN_STATUS,
@@ -17,6 +23,20 @@ from snmp import (
 app = Flask(__name__)
 app.secret_key = "gponapp-secret"
 ensure_db()
+
+
+def get_db():
+    if "db" not in g:
+        ensure_db()
+        g.db = sqlite3.connect(DB)
+    return g.db
+
+
+@app.teardown_appcontext
+def close_db(exception):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
 
 # --- доп. константа: reset ONU (admin reset) ---
 OID_ONU_RESET = "1.3.6.1.4.1.3320.10.3.2.1.4"
@@ -57,37 +77,38 @@ def refresh_olt_cache(ip: str) -> bool:
     Переопрашивает один OLT и обновляет кэш ponports/gpon в БД.
     Возвращает True, если получилось.
     """
-    with db() as conn:
-        got = conn.execute("SELECT community FROM olts WHERE ip = ?", (ip,)).fetchone()
-        if not got:
-            return False
-        community = got[0]
+    conn = get_db()
+    got = conn.execute("SELECT community FROM olts WHERE ip = ?", (ip,)).fetchone()
+    if not got:
+        return False
+    community = got[0]
 
-        # ifName -> ponports
-        ifs = parse_ifname(snmpwalk(ip, community, OID_IFNAME))
-        conn.execute("DELETE FROM ponports WHERE olt_ip = ?", (ip,))
-        for ifi, name in ifs:
-            conn.execute(
-                "INSERT INTO ponports(olt_ip, ifindex, name) VALUES(?,?,?)",
-                (ip, ifi, name)
-            )
+    # ifName -> ponports
+    ifs = parse_ifname(snmpwalk(ip, community, OID_IFNAME))
+    conn.execute("DELETE FROM ponports WHERE olt_ip = ?", (ip,))
+    for ifi, name in ifs:
+        conn.execute(
+            "INSERT INTO ponports(olt_ip, ifindex, name) VALUES(?,?,?)",
+            (ip, ifi, name)
+        )
 
-        # GPON привязки (порт, onu-id, SN) -> gpon
-        binds = parse_gpon_bind(snmpwalk(ip, community, OID_GPON_BIND_SN))
-        conn.execute("DELETE FROM gpon WHERE olt_ip = ?", (ip,))
-        for ifi, onuid, sn in binds:
-            conn.execute(
-                "INSERT OR REPLACE INTO gpon(olt_ip, portonu, idonu, snonu) VALUES(?,?,?,?)",
-                (ip, ifi, onuid, sn)
-            )
+    # GPON привязки (порт, onu-id, SN) -> gpon
+    binds = parse_gpon_bind(snmpwalk(ip, community, OID_GPON_BIND_SN))
+    conn.execute("DELETE FROM gpon WHERE olt_ip = ?", (ip,))
+    for ifi, onuid, sn in binds:
+        conn.execute(
+            "INSERT OR REPLACE INTO gpon(olt_ip, portonu, idonu, snonu) VALUES(?,?,?,?)",
+            (ip, ifi, onuid, sn)
+        )
+    conn.commit()
     return True
 
 # ---------- Главная / поиск ----------
 
 @app.get("/")
 def home():
-    with db() as conn:
-        rs = conn.execute("SELECT id, hostname, ip, vendor FROM olts ORDER BY id").fetchall()
+    conn = get_db()
+    rs = conn.execute("SELECT id, hostname, ip, vendor FROM olts ORDER BY id").fetchall()
     rows = [dict(id=r[0], hostname=r[1], ip=r[2], vendor=r[3]) for r in rs]
     return render_template("index.html", olts=rows)
 
@@ -106,8 +127,8 @@ def search():
 # список/добавление OLT
 @app.get("/olts")
 def list_olts():
-    with db() as conn:
-        rows = conn.execute("SELECT id, hostname, ip, community, vendor FROM olts ORDER BY id").fetchall()
+    conn = get_db()
+    rows = conn.execute("SELECT id, hostname, ip, community, vendor FROM olts ORDER BY id").fetchall()
     return render_template("olts.html", rows=rows)
 
 @app.post("/olts/add")
@@ -119,9 +140,10 @@ def add_olt():
     if not hostname or not ip:
         flash("Hostname и IP обязательны", "error")
         return redirect(request.referrer or url_for("home"))
-    with db() as conn:
-        conn.execute("INSERT OR REPLACE INTO olts(hostname,ip,community,vendor) VALUES(?,?,?,?)",
-                     (hostname, ip, comm, vendor))
+    conn = get_db()
+    conn.execute("INSERT OR REPLACE INTO olts(hostname,ip,community,vendor) VALUES(?,?,?,?)",
+                 (hostname, ip, comm, vendor))
+    conn.commit()
     flash(f"OLT {hostname} ({ip}) добавлен", "info")
     return redirect(url_for("home"))
 
@@ -129,21 +151,21 @@ def add_olt():
 
 @app.get("/olt/<ip>")
 def olt(ip):
-    with db() as conn:
-        row = conn.execute("SELECT hostname, community, vendor FROM olts WHERE ip = ?", (ip,)).fetchone()
-        if not row: abort(404)
-        hostname, community, vendor = row
-        ports = conn.execute(
-            """
-            SELECT p.ifindex, p.name,
-                   COALESCE((SELECT COUNT(*) FROM gpon g WHERE g.olt_ip=p.olt_ip AND g.portonu=p.ifindex),0) AS cnt
-            FROM ponports p
-            WHERE p.olt_ip = ?
-              AND p.name LIKE 'GPON%/%'
-              AND p.name NOT LIKE '%:%'
-            ORDER BY CAST(p.ifindex AS INT)
-            """, (ip,)
-        ).fetchall()
+    conn = get_db()
+    row = conn.execute("SELECT hostname, community, vendor FROM olts WHERE ip = ?", (ip,)).fetchone()
+    if not row: abort(404)
+    hostname, community, vendor = row
+    ports = conn.execute(
+        """
+        SELECT p.ifindex, p.name,
+               COALESCE((SELECT COUNT(*) FROM gpon g WHERE g.olt_ip=p.olt_ip AND g.portonu=p.ifindex),0) AS cnt
+        FROM ponports p
+        WHERE p.olt_ip = ?
+          AND p.name LIKE 'GPON%/%'
+          AND p.name NOT LIKE '%:%'
+        ORDER BY CAST(p.ifindex AS INT)
+        """, (ip,)
+    ).fetchall()
     return render_template("olt_ports.html", ip=ip, hostname=hostname, ports=ports)
 
 @app.post("/olt/<ip>/refresh")
@@ -154,6 +176,21 @@ def olt_refresh(ip):
 
 @app.get("/olt/<ip>/device")
 def olt_device(ip):
+
+    conn = get_db()
+    row = conn.execute("SELECT hostname, community FROM olts WHERE ip = ?", (ip,)).fetchone()
+    if not row: abort(404)
+    hostname, community = row
+    sys_name   = first_str(snmpwalk(ip, community, OID_SYS_NAME))
+    sys_loc    = first_str(snmpwalk(ip, community, OID_SYS_LOCATION))
+    sys_cont   = first_str(snmpwalk(ip, community, OID_SYS_CONTACT))
+    sys_descr  = first_str(snmpwalk(ip, community, OID_SYS_DESCR))
+    sys_time   = first_str(snmpwalk(ip, community, OID_SYS_TIME_STR))
+    uptime     = get_sys_uptime_ticks(ip, community)
+    cpu        = get_cpu_percent(ip, community)
+    mem        = first_int(snmpwalk(ip, community, OID_MEM_USAGE))
+    temp       = first_int(snmpwalk(ip, community, OID_TEMP_BOARD))
+=======
     with db() as conn:
         row = conn.execute("SELECT hostname, community FROM olts WHERE ip = ?", (ip,)).fetchone()
         if not row: abort(404)
@@ -176,6 +213,7 @@ def olt_device(ip):
     sys_time   = first_str(bulk_res.get(OID_SYS_TIME_STR))
     mem        = first_int(bulk_res.get(OID_MEM_USAGE))
     temp       = first_int(bulk_res.get(OID_TEMP_BOARD))
+
     return render_template("olt_device.html",
                            ip=ip, hostname=hostname,
                            sys_name=sys_name, sys_loc=sys_loc, sys_cont=sys_cont,
@@ -187,10 +225,10 @@ def olt_device(ip):
 
 @app.get("/olt/<ip>/uplinks")
 def olt_uplinks(ip):
-    with db() as conn:
-        row = conn.execute("SELECT hostname, community FROM olts WHERE ip = ?", (ip,)).fetchone()
-        if not row: abort(404)
-        hostname, community = row
+    conn = get_db()
+    row = conn.execute("SELECT hostname, community FROM olts WHERE ip = ?", (ip,)).fetchone()
+    if not row: abort(404)
+    hostname, community = row
 
     bulk_if = snmpwalk_bulk(ip, community, [OID_IFNAME, OID_IF_DESCR, OID_IF_ALIAS, OID_IF_OPER_STATUS])
     names  = bulk_if.get(OID_IFNAME, [])
@@ -234,6 +272,20 @@ def olt_uplinks(ip):
 
 @app.get("/olt/<ip>/port/<ifindex>")
 def port(ip, ifindex):
+
+    conn = get_db()
+    row = conn.execute("SELECT name FROM ponports WHERE olt_ip = ? AND ifindex = ?", (ip, ifindex)).fetchone()
+    if not row: abort(404)
+    port_name = row[0]
+    onus = conn.execute(
+        "SELECT snonu, idonu FROM gpon WHERE olt_ip = ? AND portonu = ? ORDER BY CAST(idonu AS INT)",
+        (ip, ifindex)
+    ).fetchall()
+    comm = conn.execute("SELECT community FROM olts WHERE ip = ?", (ip,)).fetchone()[0]
+    tx = first_int(snmpwalk(ip, comm, f"{OID_PON_PORT_TX}.{ifindex}"))
+    rx = first_int(snmpwalk(ip, comm, f"{OID_PON_PORT_RX}.{ifindex}"))
+    stat = first_int(snmpwalk(ip, comm, f"{OID_IF_OPER_STATUS}.{ifindex}"))
+=======
     with db() as conn:
         row = conn.execute("SELECT name FROM ponports WHERE olt_ip = ? AND ifindex = ?", (ip, ifindex)).fetchone()
         if not row: abort(404)
@@ -255,6 +307,7 @@ def port(ip, ifindex):
     tx = first_int(bulk.get(f"{OID_PON_PORT_TX}.{ifindex}"))
     rx = first_int(bulk.get(f"{OID_PON_PORT_RX}.{ifindex}"))
     stat = first_int(bulk.get(f"{OID_IF_OPER_STATUS}.{ifindex}"))
+
     def dbm(x): return None if x is None else x/10.0
     return render_template("port_onus.html",
                            ip=ip, port_name=port_name, ifindex=ifindex, onus=onus,
@@ -263,13 +316,13 @@ def port(ip, ifindex):
 # экспорт ONU на порту в CSV
 @app.get("/olt/<ip>/port/<ifindex>/export.csv")
 def port_export_csv(ip, ifindex):
-    with db() as conn:
-        rows = conn.execute(
-            "SELECT snonu, idonu FROM gpon WHERE olt_ip = ? AND portonu = ? ORDER BY CAST(idonu AS INT)",
-            (ip, ifindex)
-        ).fetchall()
-        pname = conn.execute("SELECT name FROM ponports WHERE olt_ip = ? AND ifindex = ?", (ip, ifindex)).fetchone()
-        pname = (pname[0] if pname else ifindex).replace("/", "_").replace(":", "_")
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT snonu, idonu FROM gpon WHERE olt_ip = ? AND portonu = ? ORDER BY CAST(idonu AS INT)",
+        (ip, ifindex)
+    ).fetchall()
+    pname = conn.execute("SELECT name FROM ponports WHERE olt_ip = ? AND ifindex = ?", (ip, ifindex)).fetchone()
+    pname = (pname[0] if pname else ifindex).replace("/", "_").replace(":", "_")
     out = io.StringIO()
     w = csv.writer(out)
     w.writerow(["SN", "ONU_ID", "PON_ifIndex"])
@@ -281,10 +334,10 @@ def port_export_csv(ip, ifindex):
 # bounce PON-порта (ifAdmin down->up)
 @app.post("/olt/<ip>/port/<ifindex>/bounce")
 def port_bounce(ip, ifindex):
-    with db() as conn:
-        row = conn.execute("SELECT community FROM olts WHERE ip = ?", (ip,)).fetchone()
-        if not row: abort(404)
-        community = row[0]
+    conn = get_db()
+    row = conn.execute("SELECT community FROM olts WHERE ip = ?", (ip,)).fetchone()
+    if not row: abort(404)
+    community = row[0]
     ok1 = snmpset(ip, community, f"{OID_IF_ADMIN_STATUS}.{ifindex}", "i", "2")
     time.sleep(1)
     ok2 = snmpset(ip, community, f"{OID_IF_ADMIN_STATUS}.{ifindex}", "i", "1")
@@ -294,20 +347,21 @@ def port_bounce(ip, ifindex):
 # reboot всего OLT
 @app.post("/olt/<ip>/reboot")
 def olt_reboot(ip):
-    with db() as conn:
-        row = conn.execute("SELECT community FROM olts WHERE ip = ?", (ip,)).fetchone()
-        if not row: abort(404)
-        community = row[0]
+    conn = get_db()
+    row = conn.execute("SELECT community FROM olts WHERE ip = ?", (ip,)).fetchone()
+    if not row: abort(404)
+    community = row[0]
     ok = snmpset(ip, community, OID_OLT_REBOOT, "i", "1")
     flash("Команда перезагрузки отправлена" if ok else "Не удалось выполнить перезагрузку", "info")
     return redirect(url_for("olt", ip=ip))
 
 @app.post("/olts/<ip>/delete")
 def delete_olt(ip):
-    with db() as conn:
-        conn.execute("DELETE FROM gpon WHERE olt_ip = ?", (ip,))
-        conn.execute("DELETE FROM ponports WHERE olt_ip = ?", (ip,))
-        conn.execute("DELETE FROM olts WHERE ip = ?", (ip,))
+    conn = get_db()
+    conn.execute("DELETE FROM gpon WHERE olt_ip = ?", (ip,))
+    conn.execute("DELETE FROM ponports WHERE olt_ip = ?", (ip,))
+    conn.execute("DELETE FROM olts WHERE ip = ?", (ip,))
+    conn.commit()
     flash(f"OLT {ip} удалён", "info")
     return redirect(url_for("home"))
 
@@ -317,7 +371,22 @@ def onu_by_sn(sn):
     sn = norm_sn(sn)
 
     # 1) первая попытка: ищем в кэше
-    with db() as conn:
+    conn = get_db()
+    row = conn.execute("""
+        SELECT olt_ip, portonu, idonu
+        FROM gpon
+        WHERE REPLACE(UPPER(snonu),' ','') = ?
+        LIMIT 1
+    """, (sn,)).fetchone()
+
+    # 1b) если не нашли — автоопрос всех OLT и повторный поиск
+    if not row:
+        conn = get_db()
+        olts = [r[0] for r in conn.execute("SELECT ip FROM olts").fetchall()]
+        for ip_ in olts:
+            try: refresh_olt_cache(ip_)
+            except Exception: pass
+        conn = get_db()
         row = conn.execute("""
             SELECT olt_ip, portonu, idonu
             FROM gpon
@@ -325,38 +394,23 @@ def onu_by_sn(sn):
             LIMIT 1
         """, (sn,)).fetchone()
 
-    # 1b) если не нашли — автоопрос всех OLT и повторный поиск
-    if not row:
-        with db() as conn:
-            olts = [r[0] for r in conn.execute("SELECT ip FROM olts").fetchall()]
-        for ip_ in olts:
-            try: refresh_olt_cache(ip_)
-            except Exception: pass
-        with db() as conn:
-            row = conn.execute("""
-                SELECT olt_ip, portonu, idonu
-                FROM gpon
-                WHERE REPLACE(UPPER(snonu),' ','') = ?
-                LIMIT 1
-            """, (sn,)).fetchone()
-
     if not row:
         return render_template("not_found.html", q=sn)
 
     olt_ip, port_if, onuid_port = row
-    with db() as conn:
-        community = conn.execute("SELECT community FROM olts WHERE ip = ?", (olt_ip,)).fetchone()[0]
+    conn = get_db()
+    community = conn.execute("SELECT community FROM olts WHERE ip = ?", (olt_ip,)).fetchone()[0]
 
     # имя порта и UNI
-    with db() as conn:
-        row_name = conn.execute("SELECT name FROM ponports WHERE olt_ip = ? AND ifindex = ?", (olt_ip, port_if)).fetchone()
-        port_name_base = row_name[0] if row_name else f"ifIndex {port_if}"
-        uni = conn.execute("SELECT ifindex, name FROM ponports WHERE olt_ip = ? AND name = ?",
-                           (olt_ip, f"{port_name_base}:{onuid_port}")).fetchone()
-        if uni:
-            uni_ifindex, port_name_full = uni[0], uni[1]
-        else:
-            uni_ifindex, port_name_full = None, f"{port_name_base}:{onuid_port}"
+    conn = get_db()
+    row_name = conn.execute("SELECT name FROM ponports WHERE olt_ip = ? AND ifindex = ?", (olt_ip, port_if)).fetchone()
+    port_name_base = row_name[0] if row_name else f"ifIndex {port_if}"
+    uni = conn.execute("SELECT ifindex, name FROM ponports WHERE olt_ip = ? AND name = ?",
+                       (olt_ip, f"{port_name_base}:{onuid_port}")).fetchone()
+    if uni:
+        uni_ifindex, port_name_full = uni[0], uni[1]
+    else:
+        uni_ifindex, port_name_full = None, f"{port_name_base}:{onuid_port}"
 
     # глобальный индекс
     glob_idx = find_glob_idx_by_sn(olt_ip, community, sn)
@@ -432,21 +486,21 @@ def onu_by_sn(sn):
 @app.post("/onu/reboot/<sn>")
 def onu_reboot(sn):
     sn_norm = norm_sn(sn)
-    with db() as conn:
-        row = conn.execute("""
-            SELECT olt_ip FROM gpon
-            WHERE REPLACE(UPPER(snonu),' ','') = ?
-            LIMIT 1
-        """, (sn_norm,)).fetchone()
-        if not row:
-            flash(f"ONU {sn_norm} не найдена в БД", "error")
-            return redirect(url_for("home"))
-        olt_ip = row[0]
-        comm_row = conn.execute("SELECT community FROM olts WHERE ip = ?", (olt_ip,)).fetchone()
-        if not comm_row:
-            flash(f"Не найдено community для OLT {olt_ip}", "error")
-            return redirect(url_for("home"))
-        community = comm_row[0]
+    conn = get_db()
+    row = conn.execute("""
+        SELECT olt_ip FROM gpon
+        WHERE REPLACE(UPPER(snonu),' ','') = ?
+        LIMIT 1
+    """, (sn_norm,)).fetchone()
+    if not row:
+        flash(f"ONU {sn_norm} не найдена в БД", "error")
+        return redirect(url_for("home"))
+    olt_ip = row[0]
+    comm_row = conn.execute("SELECT community FROM olts WHERE ip = ?", (olt_ip,)).fetchone()
+    if not comm_row:
+        flash(f"Не найдено community для OLT {olt_ip}", "error")
+        return redirect(url_for("home"))
+    community = comm_row[0]
 
     glob_idx = find_glob_idx_by_sn(olt_ip, community, sn_norm)
     if not glob_idx:
