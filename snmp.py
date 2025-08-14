@@ -1,14 +1,18 @@
 import re
 from typing import Optional, List, Iterable, Dict
 
-from pysnmp.hlapi import (
-    SnmpEngine, CommunityData, UdpTransportTarget, ContextData,
-    ObjectType, ObjectIdentity, bulkCmd, setCmd
-)
-from pysnmp.proto.rfc1902 import (
-    Integer, OctetString, TimeTicks, Counter32, Gauge32,
-    IpAddress, Unsigned32, ObjectIdentifier
-)
+try:
+    from pysnmp.hlapi import (
+        SnmpEngine, CommunityData, UdpTransportTarget, ContextData,
+        ObjectType, ObjectIdentity, bulkCmd, setCmd
+    )
+    from pysnmp.proto.rfc1902 import (
+        Integer, OctetString, TimeTicks, Counter32, Gauge32,
+        IpAddress, Unsigned32, ObjectIdentifier
+    )
+    HAS_PYSNMP = True
+except Exception:  # missing dependency
+    HAS_PYSNMP = False
 
 
 def _fmt_value(val) -> str:
@@ -38,11 +42,12 @@ IDX_RE = re.compile(r"\.(\d+)\.(\d+)\s*=\s*STRING:\s*\"?([^\"]+)\"?$", re.IGNORE
 SNMP_WALK_CMD  = "snmpbulkwalk"
 SNMP_WALK_OPTS = ["-v2c", "-On", "-OXs", "-Cc", "-Cr50"]  # числовые OID, компактные типы, continue, bulk
 SNMP_SET_OPTS  = ["-v2c", "-On", "-OXs"]                  # set: формат не критичен, но пусть будет единый
-=======
 
 
 def snmpwalk(host: str, community: str, oid: str, timeout=2) -> list[str]:
     """Walk single OID subtree using pysnmp without spawning processes."""
+    if not HAS_PYSNMP:
+        return []
     engine = SnmpEngine()
     target = UdpTransportTarget((host, 161), timeout=timeout)
     obj = ObjectType(ObjectIdentity(oid))
@@ -65,6 +70,8 @@ def snmpwalk(host: str, community: str, oid: str, timeout=2) -> list[str]:
 
 def snmpwalk_bulk(host: str, community: str, oids: Iterable[str], timeout=2) -> Dict[str, List[str]]:
     """Fetch several OID trees in a single bulk request."""
+    if not HAS_PYSNMP:
+        return {o: [] for o in oids}
     engine = SnmpEngine()
     target = UdpTransportTarget((host, 161), timeout=timeout)
     obj_types = [ObjectType(ObjectIdentity(o)) for o in oids]
@@ -92,6 +99,8 @@ def snmpwalk_bulk(host: str, community: str, oids: Iterable[str], timeout=2) -> 
 
 def snmpset(host: str, community: str, oid: str, typechar: str, value: str, timeout=2) -> bool:
     """Perform SNMP SET using pysnmp. typechar: i,u,t,a,o,s,…"""
+    if not HAS_PYSNMP:
+        return False
     typechar = (typechar or '').lower()
     tmap = {
         'i': Integer,
