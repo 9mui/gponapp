@@ -60,13 +60,21 @@
     <tr>
       <th>Serial Number</th>
       <th>ONU-ID</th>
+      <th>Комментарий 1</th>
+      <th>Комментарий 2</th>
+      <th></th>
     </tr>
   </thead>
   <tbody>
-    {% for sn, onuid in onus %}
+    {% for sn, onuid, c1, c2 in onus %}
     <tr>
-      <td><a href="{{ url_for('onu_by_sn', sn=sn) }}">{{ sn }}</a></td>
-      <td>{{ onuid }}</td>
+      <form method="post" action="{{ url_for('onu_comment', sn=sn) }}" style="display: contents;">
+        <td><a href="{{ url_for('onu_by_sn', sn=sn) }}">{{ sn }}</a></td>
+        <td>{{ onuid }}</td>
+        <td><input type="text" name="comment1" value="{{ c1 or '' }}"></td>
+        <td><input type="text" name="comment2" value="{{ c2 or '' }}"></td>
+        <td><button type="submit">Сохранить</button></td>
+      </form>
     </tr>
     {% endfor %}
   </tbody>
@@ -83,6 +91,10 @@
     border: 1px solid #ccc;
     padding: 6px 10px;
     text-align: left;
+  }
+  input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
   }
   @media (prefers-color-scheme: dark) {
     th, td {

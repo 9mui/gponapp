@@ -270,7 +270,7 @@ def port(ip, ifindex):
     if not row: abort(404)
     port_name = row[0]
     onus = conn.execute(
-        "SELECT snonu, idonu FROM gpon WHERE olt_ip = ? AND portonu = ? ORDER BY CAST(idonu AS INT)",
+        "SELECT snonu, idonu, comment1, comment2 FROM gpon WHERE olt_ip = ? AND portonu = ? ORDER BY CAST(idonu AS INT)",
         (ip, ifindex)
     ).fetchall()
     comm = conn.execute("SELECT community FROM olts WHERE ip = ?", (ip,)).fetchone()[0]
@@ -352,7 +352,7 @@ def onu_by_sn(sn):
     # 1) первая попытка: ищем в кэше
     conn = get_db()
     row = conn.execute("""
-        SELECT olt_ip, portonu, idonu
+        SELECT olt_ip, portonu, idonu, comment1, comment2
         FROM gpon
         WHERE REPLACE(UPPER(snonu),' ','') = ?
         LIMIT 1
@@ -367,7 +367,7 @@ def onu_by_sn(sn):
             except Exception: pass
         conn = get_db()
         row = conn.execute("""
-            SELECT olt_ip, portonu, idonu
+            SELECT olt_ip, portonu, idonu, comment1, comment2
             FROM gpon
             WHERE REPLACE(UPPER(snonu),' ','') = ?
             LIMIT 1
@@ -376,7 +376,7 @@ def onu_by_sn(sn):
     if not row:
         return render_template("not_found.html", q=sn)
 
-    olt_ip, port_if, onuid_port = row
+    olt_ip, port_if, onuid_port, comment1, comment2 = row
     conn = get_db()
     community = conn.execute("SELECT community FROM olts WHERE ip = ?", (olt_ip,)).fetchone()[0]
 
@@ -458,8 +458,23 @@ def onu_by_sn(sn):
         port_name_full=port_name_full, uni_ifindex=uni_ifindex,
         status=status, rx=dbm(rx_raw), tx=dbm(tx_raw),
         vendor=vendor, distance=distance, last_down=lastdn_txt,
-        lan_list=lan_list  # <- добавили в шаблон
+        lan_list=lan_list, comment1=comment1, comment2=comment2
     )
+
+
+@app.post("/onu/comment/<sn>")
+def onu_comment(sn):
+    sn_norm = norm_sn(sn)
+    c1 = (request.form.get("comment1") or "").strip()
+    c2 = (request.form.get("comment2") or "").strip()
+    conn = get_db()
+    conn.execute(
+        "UPDATE gpon SET comment1 = ?, comment2 = ? WHERE REPLACE(UPPER(snonu),' ','') = ?",
+        (c1, c2, sn_norm),
+    )
+    conn.commit()
+    flash("Комментарии сохранены", "info")
+    return redirect(request.referrer or url_for("onu_by_sn", sn=sn_norm))
 
 # перезагрузка ONU по SN
 @app.post("/onu/reboot/<sn>")

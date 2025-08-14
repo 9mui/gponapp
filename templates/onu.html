@@ -15,6 +15,16 @@
   Порт: {{ port_name_full }}
 </p>
 
+<form method="post" action="{{ url_for('onu_comment', sn=sn) }}" class="onu-comments">
+  <label>Комментарий 1:
+    <input type="text" name="comment1" value="{{ comment1 or '' }}">
+  </label>
+  <label>Комментарий 2:
+    <input type="text" name="comment2" value="{{ comment2 or '' }}">
+  </label>
+  <button class="btn soft" type="submit">Сохранить</button>
+</form>
+
 <!-- Компактная таблица свойств -->
 <div class="kv-wrap">
   <table class="kv">
@@ -121,6 +131,17 @@
     margin: .25rem 0 1rem;
     color: #9aa2af;
     font-size: 1rem;
+  }
+
+  .onu-comments {
+    margin: 0 0 1rem;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .onu-comments input[type="text"] {
+    padding: 4px 6px;
   }
 
   /* Кнопки */
