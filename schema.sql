@@ -25,3 +25,10 @@ CREATE TABLE IF NOT EXISTS gpon (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS gpon_uq ON gpon(olt_ip, portonu, idonu);
 
+CREATE TABLE IF NOT EXISTS onu_notes (
+  sn_norm   TEXT PRIMARY KEY,
+  note      TEXT NOT NULL DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_gpon_olt_port_id ON gpon(olt_ip, portonu, idonu);
+CREATE INDEX IF NOT EXISTS idx_ponports_olt_if ON ponports(olt_ip, ifindex);

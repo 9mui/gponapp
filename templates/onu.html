@@ -22,17 +22,19 @@
       <tr>
         <th>Статус</th>
         <td>
-          {% if status == 3 %}ONLINE
-          {% elif status in [0,1,2] %}OFFLINE
-          {% else %}Неизвестно ({{ status }})
+          {% if status == 3 %}
+            <span class="status-dot ok" title="Online" aria-label="Online"></span>ONLINE
+          {% elif status in [0,1,2] %}
+            <span class="status-dot bad" title="Offline" aria-label="Offline"></span>OFFLINE
+          {% else %}
+            <span class="status-dot dim" title="Неизвестно" aria-hidden="true"></span>Неизвестно ({{ status }})
           {% endif %}
-        </td>
+      </td>
+
       </tr>
 
       {# --- Агрегированный статус LAN: один показатель up/down (или "н/д") --- #}
       {% set sn_str = sn|string %}
-
-      {# Базовая агрегация по списку портов #}
       {% set lan_status_base = '-' %}
       {% if lan_list %}
         {% set ups = lan_list | selectattr('text','equalto','up') | list %}
@@ -48,7 +50,6 @@
         {% set lan_status_base = '-' %}
       {% endif %}
 
-      {# Правило: если SN начинается на 5 и ONU онлайн — LAN считаем up #}
       {% set lan_status = lan_status_base %}
       {% if status == 3 and sn_str.startswith('5') %}
         {% set lan_status = 'up' %}
@@ -72,10 +73,26 @@
       <tr><th>Производитель</th><td>{{ vendor if vendor else "-" }}</td></tr>
       <tr><th>Дистанция</th><td>{{ distance is not none and (distance|string + " м") or "-" }}</td></tr>
 
-      {# Причина последнего отключения — только если оффлайн #}
+      <tr>
+        <th>Комментарий</th>
+        <td>
+          <form method="post" action="{{ url_for('save_onu_note', sn=sn) }}" class="comment-row">
+            <textarea name="note" rows="2" placeholder="Текст заметки…" class="ta-note">{{ note or "" }}</textarea>
+            <button class="btn soft icon-btn" type="submit" title="Сохранить">💾</button>
+          </form>
+        </td>
+      </tr>
+
       {% if status in [0,1,2] %}
         <tr><th>Причина последнего отключение</th><td>{{ last_down }}</td></tr>
       {% endif %}
+      {% if status in [0,1,2] and last_online_snmp %}
+      <tr>
+        <th>Последний раз ONLINE</th>
+        <td>{{ last_online_snmp }}</td>
+      </tr>
+      {% endif %}
+
     </tbody>
   </table>
 </div>
@@ -101,7 +118,7 @@
 <style>
   body {
     background-color: #0f141b; /* тёмный фон */
-    color: #e5e7eb; /* светлый текст */
+    color: #e5e7eb;            /* светлый текст */
   }
 
   .onu-header {
@@ -152,6 +169,13 @@
   .btn.soft:hover {
     background: #263545;
   }
+  /* маленькая иконка-кнопка */
+  .btn.icon-btn{
+    padding: 6px 8px;
+    font-size: .95rem;
+    line-height: 1;
+    min-width: auto;
+  }
 
   .onu-footer {
     margin-top: 14px;
@@ -159,16 +183,13 @@
     justify-content: center;
   }
 
-  /* Таблица */
-  .kv-wrap {
-    display: flex;
-    justify-content: center;
-  }
+  /* Таблица свойств: делаем шире по горизонтали */
+  .kv-wrap { display: flex; justify-content: center; }
   .kv {
     border-collapse: collapse;
     font-size: 17px;
-    min-width: 400px;
-    max-width: 600px;
+    /* ширина адаптивно тянется: от 520px до 900px, обычно ~72% экрана */
+    width: clamp(520px, 72vw, 900px);
   }
   .kv th, .kv td {
     border: 1px solid #2a2f3a;
@@ -180,9 +201,33 @@
     white-space: nowrap;
     font-weight: 600;
     color: #cbd5e1;
+    width: 28%; /* фиксируем колонку заголовков */
   }
   .kv td {
     color: #e5e7eb;
+    width: 72%; /* контент шире */
+  }
+
+  /* Форма комментария */
+  .comment-row{
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+    width:100%;
+  }
+  .ta-note{
+    flex:1 1 auto;
+    width:100%;
+    min-height:44px;       /* старт: ~2 строки */
+    max-height:40vh;       /* ограничение по высоте */
+    resize:vertical;       /* РЕСАЙЗ ТОЛЬКО ПО ВЕРТИКАЛИ */
+    overflow:auto;
+    padding:10px 12px;
+    border-radius:10px;
+    background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.12);
+    color:#e5e7eb;
+    box-sizing:border-box;
   }
 
   /* Бейджи */
@@ -194,19 +239,27 @@
     border: 1px solid #2a2f3a;
     color: #e5e7eb;
   }
-  .badge.ok { background: #16361e; border-color: #225c33; color: #a6f0c2; }
+  .badge.ok  { background: #16361e; border-color: #225c33; color: #a6f0c2; }
   .badge.bad { background: #3b1619; border-color: #5c2227; color: #ffb3bb; }
   .badge.dim { background: #1a242f; border-color: #2b3b4e; color: #9aa2af; }
 
   /* Картинка статуса */
-  .onu-status-img {
-    text-align: center;
-    margin-top: 20px;
+  .onu-status-img { text-align: center; margin-top: 20px; }
+  .onu-status-img img { max-width: 380px; height: auto; }
+
+  /* Индикатор статуса рядом с текстом */
+  .status-dot{
+    display:inline-block;
+    width:10px; height:10px;
+    border-radius:50%;
+    margin-right:6px;
+    vertical-align:middle;
+    box-shadow:0 0 0 1px rgba(255,255,255,.15);
   }
-  .onu-status-img img {
-    max-width: 380px;
-    height: auto;
-  }
+  .status-dot.ok  { background:#20c997; } /* зелёный */
+   status-dot.bad { background:#dc3545; } /* красный  */
+  .status-dot.dim { background:#6b7280; } /* серый    */
+
 </style>
 
 {% endblock content %}

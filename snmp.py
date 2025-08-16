@@ -1,7 +1,8 @@
 import re
-import subprocess
+import subprocess, shlex, re
 from typing import Optional, List
-
+SNMP_TIMEOUT = "0.4"   # секунды
+SNMP_RETRIES = "0"
 # Используем snmpbulkwalk + стабильный вывод и «продолжение» при OID not increasing.
 SNMP_WALK_CMD  = "snmpbulkwalk"
 SNMP_WALK_OPTS = ["-v2c", "-On", "-OXs", "-Cc", "-Cr50"]  # числовые OID, компактные типы, continue, bulk
@@ -22,6 +23,74 @@ def snmpset(host: str, community: str, oid: str, typechar: str, value: str, time
     cmd = ["snmpset", *SNMP_SET_OPTS, "-c", community, "-t", str(timeout), host, oid, typechar, value]
     out = subprocess.run(cmd, capture_output=True, text=True)
     return out.returncode == 0
+
+def snmpget(ip, community, oid):
+    cmd = f"snmpget -v2c -c {shlex.quote(community)} -t {SNMP_TIMEOUT} -r {SNMP_RETRIES} -OQnt {shlex.quote(ip)} {shlex.quote(oid)}"
+    try:
+        out = subprocess.check_output(
+            cmd, shell=True,
+            stderr=subprocess.DEVNULL,   # важно: не тащим варнинги в значение
+            timeout=2.5
+        )
+        return out.decode("utf-8", "ignore").strip().splitlines()
+    except subprocess.CalledProcessError:
+        return []
+    except subprocess.TimeoutExpired:
+        return []
+
+
+_OID_LINE_RE = re.compile(r'^[\.\d]+(?:\.\d+)*\s+.+$')  # ".1.3.6... value"
+
+def _clean_oid_lines(lines):
+    cleaned = []
+    for ln in (lines or []):
+        s = (ln or "").strip()
+        if not s:
+            continue
+        # отбрасываем типичные мусорные строки
+        low = s.lower()
+        if low.startswith("line ") or "unknown token" in low or low.startswith("warning") or s.startswith("Timeout:"):
+            continue
+        if _OID_LINE_RE.match(s):
+            cleaned.append(s)
+    return cleaned
+
+def get_int(ip, community, oid_with_index):
+    lines = _clean_oid_lines(snmpget(ip, community, oid_with_index))
+    for ln in lines:
+        # -OQnt -> "OID value"
+        parts = ln.split(None, 1)
+        if len(parts) < 2:
+            continue
+        val = parts[1].strip()
+        m = re.search(r'(-?\d+)$', val)
+        if m:
+            try:
+                return int(m.group(1))
+            except:
+                pass
+    return None
+
+def _strip_str_value(val: str) -> str:
+    v = (val or "").strip()
+    if v.startswith("="):
+        v = v[1:].strip()  # убираем ведущий "=" от старых форматов вывода
+    # вычистим возможные типы
+    v = re.sub(r"^(?:OCTET STRING|STRING|Hex-STRING):\s*", "", v, flags=re.I)
+    # снимем кавычки, если они есть
+    if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+        v = v[1:-1]
+    return v
+
+def get_str(ip, community, oid_with_index):
+    lines = _clean_oid_lines(snmpget(ip, community, oid_with_index))
+    for ln in lines:
+        parts = ln.split(None, 1)  # ".1.3...  value"
+        if len(parts) < 2:
+            continue
+        return _strip_str_value(parts[1])
+    return None
+
 
 def parse_uptime_ticks(lines: List[str]) -> Optional[int]:
     if not lines:
@@ -72,6 +141,7 @@ def first_int(lines: list[str]) -> int | None:
         return int(m.group(1))
     # ultra-quiet: строка — одно число
     for ln in lines:
+
         if ln.strip().lstrip("-").isdigit():
             return int(ln.strip())
     return None
@@ -104,6 +174,10 @@ OID_IF_DESCR        = "1.3.6.1.2.1.2.2.1.2"               # ifDescr.<ifIndex>
 OID_IF_ALIAS        = "1.3.6.1.2.1.31.1.1.1.18"           # ifAlias.<ifIndex>
 OID_IF_OPER_STATUS  = "1.3.6.1.2.1.2.2.1.8"               # up(1)/down(2)
 OID_IF_ADMIN_STATUS = "1.3.6.1.2.1.2.2.1.7"               # up(1)/down(2)/testing(3)
+
+# IF-MIB
+OID_IF_LAST_CHANGE = "1.3.6.1.2.1.2.2.1.9"
+
 
 # 5-minute bitrate (BDCOM private)
 OID_IF_IN_5M_BIT    = "1.3.6.1.4.1.3320.9.64.4.1.1.6"     # ifIn5MinBitRate.<ifIndex>
