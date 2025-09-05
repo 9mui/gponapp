@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Новые ONU{% endblock %}
+
+{% block head %}
+<style>
+.recent-onus-container {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.recent-onus-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+
+.recent-onus-table th,
+.recent-onus-table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.recent-onus-table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    color: #333;
+}
+
+.recent-onus-table tr:hover {
+    background-color: #f5f5f5;
+}
+
+.onu-serial {
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    color: #2c5282;
+}
+
+.datetime-cell {
+    color: #666;
+    font-size: 0.9em;
+}
+
+.refresh-info {
+    color: #666;
+    font-size: 0.9em;
+    margin-top: 10px;
+    text-align: center;
+}
+
+.no-data {
+    text-align: center;
+    color: #999;
+    font-style: italic;
+    padding: 40px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="recent-onus-container">
+    <h2>🆕 Новые ONU</h2>
+    <p>Недавно обнаруженные ONU во всех OLT системы</p>
+    
+    <table class="recent-onus-table" id="recentOnusTable">
+        <thead>
+            <tr>
+                <th>OLT</th>
+                <th>Порт</th>
+                <th>ONU ID</th>
+                <th>Серийный номер</th>
+                <th>Первое обнаружение</th>
+            </tr>
+        </thead>
+        <tbody id="recentOnusBody">
+            <!-- Данные загружаются через JavaScript -->
+        </tbody>
+    </table>
+    
+    <div class="refresh-info" id="refreshInfo">
+        Автообновление каждые 2 минуты...
+    </div>
+</div>
+
+<script>
+let refreshTimer;
+
+function loadRecentONUs() {
+    fetch('/api/recent_onus')
+        .then(response => response.json())
+        .then(data => {
+            const tbody = document.getElementById('recentOnusBody');
+            
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="no-data">Новых ONU не найдено</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = data.map(onu => `
+                <tr>
+                    <td><strong>${onu.olt_hostname}</strong><br><small>${onu.olt_ip}</small></td>
+                    <td>${onu.port_name}</td>
+                    <td>${onu.idonu}</td>
+                    <td class="onu-serial">${onu.snonu}</td>
+                    <td class="datetime-cell">${formatDateTime(onu.first_seen)}</td>
+                </tr>
+            `).join('');
+        })
+        .catch(error => {
+            console.error('Ошибка загрузки данных:', error);
+            document.getElementById('recentOnusBody').innerHTML = 
+                '<tr><td colspan="5" class="no-data">Ошибка загрузки данных</td></tr>';
+        });
+}
+
+function formatDateTime(dateStr) {
+    if (!dateStr) return 'Неизвестно';
+    
+    try {
+        const date = new Date(dateStr);
+        return date.toLocaleString('ru-RU', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    } catch (e) {
+        return dateStr;
+    }
+}
+
+function startAutoRefresh() {
+    // Обновляем сразу при загрузке
+    loadRecentONUs();
+    
+    // Затем каждые 2 минуты
+    refreshTimer = setInterval(() => {
+        loadRecentONUs();
+        updateRefreshInfo();
+    }, 120000); // 2 минуты
+}
+
+function updateRefreshInfo() {
+    const now = new Date();
+    document.getElementById('refreshInfo').textContent = 
+        `Последнее обновление: ${now.toLocaleTimeString('ru-RU')} (автообновление каждые 2 минуты)`;
+}
+
+// Запуск при загрузке страницы
+document.addEventListener('DOMContentLoaded', startAutoRefresh);
+
+// Очистка таймера при уходе со страницы
+window.addEventListener('beforeunload', () => {
+    if (refreshTimer) {
+        clearInterval(refreshTimer);
+    }
+});
+</script>
+{% endblock %}
