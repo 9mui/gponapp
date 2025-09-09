@@ -1,24 +1,52 @@
+# Python environment and cache
 .venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
+dist/
+build/
+
+# Logs and temporary files
 *.log
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+
+# Database files (keep only active instance/onulist.db)
+instance/*.db-shm
+instance/*.db-wal
+instance/*.db.bak*
+instance/*.backup
+*.db
+!instance/onulist.db
+
+# Configuration and secrets
 .env
+.env.local
+config.ini
+secrets.txt
+
+# IDE and editor files
 .idea/
+.vscode/
 .DS_Store
-instance/*.db*
-*.sqlite*
-*.db
-*.db-shm
-*.db-wal
-instance/*.db*
-*.sqlite*
-*.db
-*.db-shm
-*.db-wal
-instance/*.db*
-*.sqlite*
-*.db
-*.db-shm
-*.db-wal
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Large reference files
+oltoid.txt
+*.oid
+
+# Performance and monitoring outputs
+performance_report.json
+monitoring_output.txt
+
+# System files
+.directory
+*.desktop

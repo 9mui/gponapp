@@ -125,6 +125,7 @@
 
       <!-- Кнопка Главная доступна везде -->
       <a class="btn soft" href="{{ url_for('home') }}" data-loading>Главная</a>
+      <a class="btn" href="{{ url_for('recent_onus_page') }}" data-loading>Новые ONU</a>
     </header>
 
     {% with messages = get_flashed_messages(with_categories=true) %}

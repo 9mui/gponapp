@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 480" width="420" height="480">
+  <defs>
+    <style>
+      .bg { fill: #0f172a; }
+      .text { fill: #e5e7eb; font-family: system-ui, sans-serif; font-size: 18px; text-anchor: middle; }
+      .icon { fill: #6b7280; }
+      .accent { fill: #22d3ee; }
+    </style>
+  </defs>
+  
+  <!-- Background -->
+  <rect class="bg" width="420" height="480"/>
+  
+  <!-- Search icon -->
+  <g transform="translate(210, 180)">
+    <circle class="icon" cx="0" cy="0" r="40" stroke="#6b7280" stroke-width="4" fill="none"/>
+    <line class="icon" x1="28" y1="28" x2="50" y2="50" stroke="#6b7280" stroke-width="4" stroke-linecap="round"/>
+    <line class="accent" x1="-15" y1="-15" x2="15" y2="15" stroke="#ef4444" stroke-width="3" stroke-linecap="round"/>
+    <line class="accent" x1="15" y1="-15" x2="-15" y2="15" stroke="#ef4444" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  
+  <!-- Text -->
+  <text class="text" x="210" y="280">ONU не найдена</text>
+  <text class="text" x="210" y="310" style="font-size: 14px; fill: #9ca3af;">Попробуйте другой серийный номер</text>
+  
+  <!-- Decorative elements -->
+  <circle class="accent" cx="80" cy="120" r="2" opacity="0.5"/>
+  <circle class="accent" cx="340" cy="140" r="2" opacity="0.5"/>
+  <circle class="accent" cx="60" cy="380" r="2" opacity="0.5"/>
+  <circle class="accent" cx="360" cy="400" r="2" opacity="0.5"/>
+</svg>

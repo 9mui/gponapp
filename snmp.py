@@ -1,7 +1,10 @@
 import re
-import subprocess
+import subprocess, shlex, re, logging
 from typing import Optional, List
 
+logger = logging.getLogger(__name__)
+SNMP_TIMEOUT = "0.4"   # секунды
+SNMP_RETRIES = "0"
 # Используем snmpbulkwalk + стабильный вывод и «продолжение» при OID not increasing.
 SNMP_WALK_CMD  = "snmpbulkwalk"
 SNMP_WALK_OPTS = ["-v2c", "-On", "-OXs", "-Cc", "-Cr50"]  # числовые OID, компактные типы, continue, bulk
@@ -9,10 +12,15 @@ SNMP_SET_OPTS  = ["-v2c", "-On", "-OXs"]                  # set: формат н
 
 def snmpwalk(host: str, community: str, oid: str, timeout=2) -> list[str]:
     cmd = [SNMP_WALK_CMD, *SNMP_WALK_OPTS, "-c", community, "-t", str(timeout), host, oid]
+    logger.debug(f"SNMP command: {' '.join(cmd)}")
     out = subprocess.run(cmd, capture_output=True, text=True)
     # Даже если stderr содержит предупреждение, stdout нам важнее
     txt = (out.stdout or "").strip()
-    return [ln.rstrip() for ln in txt.splitlines() if ln.strip()]
+    result = [ln.rstrip() for ln in txt.splitlines() if ln.strip()]
+    logger.debug(f"SNMP result: {len(result)} lines for OID {oid}")
+    if result:
+        logger.debug(f"First line: {result[0]}")
+    return result
 
 def snmpset(host: str, community: str, oid: str, typechar: str, value: str, timeout=2) -> bool:
     """
@@ -22,6 +30,74 @@ def snmpset(host: str, community: str, oid: str, typechar: str, value: str, time
     cmd = ["snmpset", *SNMP_SET_OPTS, "-c", community, "-t", str(timeout), host, oid, typechar, value]
     out = subprocess.run(cmd, capture_output=True, text=True)
     return out.returncode == 0
+
+def snmpget(ip, community, oid):
+    cmd = f"snmpget -v2c -c {shlex.quote(community)} -t {SNMP_TIMEOUT} -r {SNMP_RETRIES} -OQnt {shlex.quote(ip)} {shlex.quote(oid)}"
+    try:
+        out = subprocess.check_output(
+            cmd, shell=True,
+            stderr=subprocess.DEVNULL,   # важно: не тащим варнинги в значение
+            timeout=2.5
+        )
+        return out.decode("utf-8", "ignore").strip().splitlines()
+    except subprocess.CalledProcessError:
+        return []
+    except subprocess.TimeoutExpired:
+        return []
+
+
+_OID_LINE_RE = re.compile(r'^[\.\d]+(?:\.\d+)*\s+.+$')  # ".1.3.6... value"
+
+def _clean_oid_lines(lines):
+    cleaned = []
+    for ln in (lines or []):
+        s = (ln or "").strip()
+        if not s:
+            continue
+        # отбрасываем типичные мусорные строки
+        low = s.lower()
+        if low.startswith("line ") or "unknown token" in low or low.startswith("warning") or s.startswith("Timeout:"):
+            continue
+        if _OID_LINE_RE.match(s):
+            cleaned.append(s)
+    return cleaned
+
+def get_int(ip, community, oid_with_index):
+    lines = _clean_oid_lines(snmpget(ip, community, oid_with_index))
+    for ln in lines:
+        # -OQnt -> "OID value"
+        parts = ln.split(None, 1)
+        if len(parts) < 2:
+            continue
+        val = parts[1].strip()
+        m = re.search(r'(-?\d+)$', val)
+        if m:
+            try:
+                return int(m.group(1))
+            except:
+                pass
+    return None
+
+def _strip_str_value(val: str) -> str:
+    v = (val or "").strip()
+    if v.startswith("="):
+        v = v[1:].strip()  # убираем ведущий "=" от старых форматов вывода
+    # вычистим возможные типы
+    v = re.sub(r"^(?:OCTET STRING|STRING|Hex-STRING):\s*", "", v, flags=re.I)
+    # снимем кавычки, если они есть
+    if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+        v = v[1:-1]
+    return v
+
+def get_str(ip, community, oid_with_index):
+    lines = _clean_oid_lines(snmpget(ip, community, oid_with_index))
+    for ln in lines:
+        parts = ln.split(None, 1)  # ".1.3...  value"
+        if len(parts) < 2:
+            continue
+        return _strip_str_value(parts[1])
+    return None
+
 
 def parse_uptime_ticks(lines: List[str]) -> Optional[int]:
     if not lines:
@@ -72,6 +148,7 @@ def first_int(lines: list[str]) -> int | None:
         return int(m.group(1))
     # ultra-quiet: строка — одно число
     for ln in lines:
+
         if ln.strip().lstrip("-").isdigit():
             return int(ln.strip())
     return None
@@ -105,6 +182,10 @@ OID_IF_ALIAS        = "1.3.6.1.2.1.31.1.1.1.18"           # ifAlias.<ifIndex>
 OID_IF_OPER_STATUS  = "1.3.6.1.2.1.2.2.1.8"               # up(1)/down(2)
 OID_IF_ADMIN_STATUS = "1.3.6.1.2.1.2.2.1.7"               # up(1)/down(2)/testing(3)
 
+# IF-MIB
+OID_IF_LAST_CHANGE = "1.3.6.1.2.1.2.2.1.9"
+
+
 # 5-minute bitrate (BDCOM private)
 OID_IF_IN_5M_BIT    = "1.3.6.1.4.1.3320.9.64.4.1.1.6"     # ifIn5MinBitRate.<ifIndex>
 OID_IF_OUT_5M_BIT   = "1.3.6.1.4.1.3320.9.64.4.1.1.8"     # ifOut5MinBitRate.<ifIndex>
@@ -120,6 +201,10 @@ OID_GPON_ONU_SW_A   = "1.3.6.1.4.1.3320.10.3.1.1.20"
 OID_GPON_ONU_SW_B   = "1.3.6.1.4.1.3320.10.3.1.1.24"
 OID_GPON_ONU_DIST   = "1.3.6.1.4.1.3320.10.3.1.1.33"
 OID_GPON_ONU_LASTDN = "1.3.6.1.4.1.3320.10.3.1.1.35"
+
+# ---- LAN Status OIDs для разных версий BDCOM ----
+OID_LAN_STATUS_4    = "1.3.6.1.4.1.3320.10.4.1.1.4"       # .<globIdx>.<uni> (стандартный)
+OID_LAN_STATUS_1    = "1.3.6.1.4.1.3320.10.4.1.1.1"       # .<globIdx>.<uni> (OLT 20.4)
 
 # ---- PON port optics ----
 OID_PON_PORT_TX     = "1.3.6.1.4.1.3320.10.2.2.1.5"       # .<ifIndex> (×0.1 dBm)
@@ -184,12 +269,52 @@ def parse_gpon_bind(lines):
     return out
 
 def find_glob_idx_by_sn(host: str, community: str, sn: str) -> str | None:
+    logger.debug(f"find_glob_idx_by_sn called for host={host}, sn={sn}")
     lines = snmpwalk(host, community, OID_GPON_ONU_SN_TAB)
-    pat = re.compile(r"\.(\d+)\s*=\s*STRING:\s*\"([0-9A-F]+)\"")
+    logger.debug(f"snmpwalk returned {len(lines)} lines for OID_GPON_ONU_SN_TAB")
+    if lines:
+        logger.debug(f"First few lines: {lines[:3]}")
+        # Показываем все SN в таблице для отладки
+        all_sns = []
+        for ln in lines[:10]:  # Первые 10 для краткости
+            m = re.search(r"\.(\d+)\s*=\s*STRING:\s*\"([^\"]+)\"", ln)
+            if m:
+                all_sns.append(f"{m.group(1)}: {m.group(2)}")
+        logger.debug(f"Sample SNs in table: {all_sns}")
+    
+    # Пробуем найти точное совпадение
+    pat = re.compile(r"\.(\d+)\s*=\s*STRING:\s*\"([^\"]+)\"")
     for ln in lines:
         m = pat.search(ln)
-        if m and m.group(2).upper() == sn:
-            return m.group(1)
+        if m:
+            table_sn = m.group(2).strip()
+            glob_idx = m.group(1)
+            logger.debug(f"Checking table SN: '{table_sn}' vs search SN: '{sn}'")
+            
+            # 1. Прямое совпадение
+            if table_sn.upper() == sn.upper():
+                logger.debug(f"Found glob_idx {glob_idx} for SN {sn} (exact match)")
+                return glob_idx
+            
+            # 2. Проверяем короткий формат BDCM:XXXXXXXX
+            if ":" in table_sn:
+                vendor, tail = table_sn.split(":", 1)
+                if len(vendor) == 4 and len(tail) == 8:
+                    # Конвертируем BDCM:XXXXXXXX в полный HEX
+                    vendor_hex = "".join(f"{ord(c):02X}" for c in vendor[:4])
+                    full_hex = vendor_hex + tail.upper()
+                    logger.debug(f"Converted '{table_sn}' to '{full_hex}'")
+                    if full_hex == sn.upper():
+                        logger.debug(f"Found glob_idx {glob_idx} for SN {sn} (converted match)")
+                        return glob_idx
+            
+            # 3. Проверяем, может быть SN в таблице уже в полном HEX формате
+            if len(table_sn) == 16 and re.match(r"^[0-9A-Fa-f]{16}$", table_sn):
+                if table_sn.upper() == sn.upper():
+                    logger.debug(f"Found glob_idx {glob_idx} for SN {sn} (hex match)")
+                    return glob_idx
+    
+    logger.debug(f"No glob_idx found for SN {sn}")
     return None
 
 OFFLINE_REASON = {

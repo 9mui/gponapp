@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
-<h2 style="display: flex; align-items: center; justify-content: space-between;">
+
+<h2 style="display:flex; align-items:center; justify-content:space-between;">
   <span>{{ ip }} — {{ port_name }}</span>
-  <form method="post" action="{{ url_for('port_bounce', ip=ip, ifindex=ifindex) }}"
+  <form method="post"
+        action="{{ url_for('port_bounce', ip=ip, ifindex=ifindex) }}"
         onsubmit="return confirm('Перезагрузить (down→up) этот PON-порт?')"
-        style="margin: 0;">
-    <button class="btn warn" style="padding: 6px 12px; font-size: 0.9rem;">Перезагрузить порт</button>
+        style="margin:0;">
+    <button class="btn warn" style="padding:6px 12px; font-size:0.9rem;">Перезагрузить порт</button>
   </form>
 </h2>
 
@@ -16,82 +18,117 @@
   PON RX: {{ pon_rx if pon_rx is not none else "-" }} dBm
 </p>
 
-
 <style>
-  .btn {
-    display: inline-block;
-    border: none;
-    border-radius: 6px;
-    padding: 8px 14px;
-    font-size: 14px;
-    cursor: pointer;
-    text-decoration: none;
-    text-align: center;
+  /* Общая тёмная палитра — как на странице ONU */
+  body{ background:#0f141b; color:#e5e7eb; }
+
+  /* Базовые кнопки (если не заданы в base.html) */
+  .btn{ display:inline-block; border:none; border-radius:6px; padding:8px 14px; font-size:14px; cursor:pointer; text-align:center; }
+  .btn.warn{ background:#dc3545; color:#fff; }
+  .btn.warn:hover{ background:#b52a38; }
+
+  /* Мягкая синяя кнопка в общей стилистике */
+  .btn.soft{
+    background:#1e2a36;
+    color:#cfe4ff;
+    border:1px solid #334b62;
   }
-  .btn.warn {
-    background: #dc3545;
-    color: #fff;
+  .btn.soft:hover{ background:#263545; }
+
+  /* Ссылки SN — белые, крупнее, без изменений на hover/visited */
+  a.sn-link{
+    color:#e5e7eb;
+    text-decoration:none;
+    font-size:18px;
+    font-weight:600;
+    letter-spacing:.2px;
   }
-  .btn.warn:hover {
-    background: #b52a38;
+  a.sn-link:visited,
+  a.sn-link:hover,
+  a.sn-link:focus,
+  a.sn-link:active{
+    color:#e5e7eb;
+    text-decoration:none;
+    outline:none;
   }
-  .btn.export-btn {
-    background: #e0f2ff; /* мягкий голубой */
-    color: #0b3d91;
-    border: 1px solid #b3daff;
+
+  /* Выравнивание ячейки с серийником по центру */
+  td.sn-col{ text-align:center; }
+
+  /* Форма и поле комментария */
+  .comment-form{
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+    width:100%;
   }
-  .btn.export-btn:hover {
-    background: #cde9ff;
+  .ta-note{
+    flex:1 1 auto;
+    width:100%;
+    min-height:44px;          /* старт: ~2 строки */
+    max-height:40vh;          /* ограничение по высоте */
+    resize:vertical;          /* РЕСАЙЗ ТОЛЬКО ПО ВЕРТИКАЛИ */
+    overflow:auto;
+    padding:10px 12px;
+    border-radius:10px;
+    background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.12);
+    color:#e5e7eb;
+    box-sizing:border-box;
   }
-  @media (prefers-color-scheme: dark) {
-    .btn.export-btn {
-      background: #1e2a36;
-      color: #cce4ff;
-      border-color: #334b62;
-    }
-    .btn.export-btn:hover {
-      background: #263545;
-    }
+
+  /* Таблица */
+  table.table-onus{
+    border-collapse:collapse; width:100%;
+    font-family:sans-serif; font-size:17px;
+    background:transparent;
   }
+  table.table-onus th, table.table-onus td{
+    border:1px solid #2a2f3a;
+    padding:6px 10px; text-align:left; vertical-align:middle;
+    color:#e5e7eb; background:transparent;
+  }
+  table.table-onus td.sn-col {
+    text-align: center; 
+  }
+  table.table-onus th{ color:#cbd5e1; font-weight:600; }
 </style>
+
 {% if onus %}
-<table>
+<table class="table-onus">
+  <!-- Поменяли порядок колонок и задали ширины:
+       1) ONU-ID (уже),
+       2) Serial Number (шире),
+       3) Комментарий (остальное). -->
+  <colgroup>
+    <col style="width:7%;">  <!-- ONU-ID -->
+    <col style="width:33%;">  <!-- Serial Number -->
+    <col style="width:60%;">  <!-- Комментарий -->
+  </colgroup>
   <thead>
     <tr>
-      <th>Serial Number</th>
       <th>ONU-ID</th>
+      <th>Serial Number</th>
+      <th>Комментарий</th>
     </tr>
   </thead>
   <tbody>
-    {% for sn, onuid in onus %}
+    {% for sn, onuid, note in onus %}
     <tr>
-      <td><a href="{{ url_for('onu_by_sn', sn=sn) }}">{{ sn }}</a></td>
       <td>{{ onuid }}</td>
+      <td class="sn-col"><a class="sn-link" href="{{ url_for('onu_by_sn', sn=sn) }}">{{ sn }}</a></td>
+      <td>
+        <form method="post" action="{{ url_for('save_onu_note', sn=sn) }}" class="comment-form">
+          <textarea name="note" placeholder="Заметка…" rows="2" class="ta-note">{{- note or '' -}}</textarea>
+          <button class="btn soft" type="submit" title="Сохранить">💾</button>
+        </form>
+      </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
-
-<style>
-  table {
-    border-collapse: collapse;
-    width: 80%;
-    font-family: sans-serif;
-    font-size: 17px;
-  }
-  th, td {
-    border: 1px solid #ccc;
-    padding: 6px 10px;
-    text-align: left;
-  }
-  @media (prefers-color-scheme: dark) {
-    th, td {
-      border-color: #444;
-      color: #ddd;
-    }
-  }
-</style>
 {% else %}
 <p>На этом порту ONU не найдены.</p>
 {% endif %}
+
 {% endblock %}
