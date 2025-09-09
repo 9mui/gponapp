@@ -200,7 +200,7 @@ def refresh_olt_cache(ip: str) -> bool:
             logger.info(f"Starting cache refresh for OLT {ip}")
             
             # ifName -> ponports (optimized with cached SNMP and bulk operations)
-            ifs = parse_ifname(cached_snmpwalk(ip, community, OID_IFNAME, ttl=60))  # Cache for 1 minute
+            ifs = parse_ifname(cached_snmpwalk(ip, community, OID_IFNAME, ttl=60) or [])  # Cache for 1 minute
             if ifs:
                 conn.execute("DELETE FROM ponports WHERE olt_ip = ?", (ip,))
                 # Bulk insert for better performance
@@ -211,7 +211,8 @@ def refresh_olt_cache(ip: str) -> bool:
                 logger.debug(f"Updated {len(ifs)} PON ports for OLT {ip}")
 
             # GPON bindings optimization with cached SNMP and batch processing
-            binds = parse_gpon_bind(cached_snmpwalk(ip, community, OID_GPON_BIND_SN, ttl=60))  # Cache for 1 minute
+            binds = parse_gpon_bind(cached_snmpwalk(ip, community, OID_GPON_BIND_SN, ttl=60) or [])  # Cache for 1 minute
+            sns_to_clean = []  # Initialize here to avoid unbound variable
             if binds:
                 conn.execute("DELETE FROM gpon WHERE olt_ip = ?", (ip,))
                 
@@ -241,15 +242,49 @@ def refresh_olt_cache(ip: str) -> bool:
                     gpon_data
                 )
                 
-                # Bulk upsert ONU seen data
-                conn.executemany(
-                    """INSERT INTO onu_seen (sn_norm)
-                       VALUES (?)
-                       ON CONFLICT(sn_norm) DO UPDATE SET last_seen = CURRENT_TIMESTAMP""",
-                    onu_seen_data
-                )
+                # Simple bulk upsert ONU seen data - mark all as potentially online
+                # since they were found in GPON bindings
+                current_time = datetime.now().isoformat()
+                for sn_norm in sns_to_clean:
+                    conn.execute(
+                        """INSERT INTO onu_seen (sn_norm, status, last_online)
+                           VALUES (?, 3, ?)
+                           ON CONFLICT(sn_norm) DO UPDATE SET 
+                           last_seen = CURRENT_TIMESTAMP,
+                           status = 3,
+                           last_online = ?""",
+                        (sn_norm, current_time, current_time)
+                    )
                 
                 logger.info(f"Updated {len(binds)} GPON bindings for OLT {ip}")
+            
+            # Mark ONUs that are no longer in GPON bindings as potentially offline
+            # This is a cleanup step to detect disconnected ONUs
+            try:
+                # Get all ONUs that were previously seen on this OLT but are no longer in bindings
+                existing_onus = conn.execute(
+                    """SELECT DISTINCT REPLACE(UPPER(snonu),' ','') 
+                       FROM gpon 
+                       WHERE olt_ip = ?""", 
+                    (ip,)
+                ).fetchall()
+                
+                existing_sns = {row[0] for row in existing_onus}
+                current_sns = set(sns_to_clean) if sns_to_clean else set()
+                missing_sns = existing_sns - current_sns
+                
+                if missing_sns:
+                    # Mark missing ONUs with status 0 (offline) but don't update last_online
+                    for missing_sn in missing_sns:
+                        conn.execute(
+                            """UPDATE onu_seen 
+                               SET status = 0, last_seen = CURRENT_TIMESTAMP 
+                               WHERE sn_norm = ? AND status != 0""",
+                            (missing_sn,)
+                        )
+                    logger.debug(f"Marked {len(missing_sns)} ONUs as offline on OLT {ip}")
+            except Exception as e:
+                logger.warning(f"Error updating offline status for OLT {ip}: {e}")
             
             return True
             
@@ -721,16 +756,21 @@ def onu_by_sn(sn):
         return results
 
     lan_list = onu_lan_statuses()
+    
+    # Get last online time from database instead of calculating from SNMP
     last_online_str = None
-    if status in (0, 1, 2) and uni_ifindex:
-        upt = get_sys_uptime_ticks(olt_ip, community)
-        lct = get_if_last_change_ticks(olt_ip, community, uni_ifindex)
-        dt = last_change_to_local_dt(upt, lct)
-        if dt: last_online_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+    if status in (0, 1, 2):  # Only show for offline ONUs
+        with db() as conn:
+            last_online_row = conn.execute(
+                "SELECT last_online FROM onu_seen WHERE sn_norm = ?", 
+                (sn,)
+            ).fetchone()
+            if last_online_row and last_online_row[0]:
+                last_online_str = _to_local_str(last_online_row[0])
 
     def dbm(x): return None if x is None else x/10.0
     distance = meters_from_dm(dist_dm)
-    lastdn_txt = OFFLINE_REASON.get(lastdn, str(lastdn) if lastdn is not None else "-")
+    lastdn_txt = OFFLINE_REASON.get(lastdn, str(lastdn)) if lastdn is not None else "-"
     with db() as conn:
         note_txt = get_onu_note(conn, sn)
 
