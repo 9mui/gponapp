@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Новые ONU{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-title-row">
+    <h2>Новые ONU (последние 50)</h2>
+    <a class="panel-btn" href="/">На главную</a>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 8%">#</th>
+        <th style="width: 34%">Серийный номер</th>
+        <th style="width: 24%">Дата подключения</th>
+        <th style="width: 18%">IP OLT</th>
+        <th style="width: 16%">Порт</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if items %}
+        {% for row in items %}
+          {% set port_base = row.port_name or row.portonu %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td><a class="table-link" href="/onu/sn/{{ row.sn_norm }}">{{ row.sn_norm }}</a></td>
+            <td>{{ row.first_seen|tz_tashkent }}</td>
+            <td><a class="table-link" href="/olt/{{ row.olt_ip }}">{{ row.olt_ip }}</a></td>
+            <td>{{ port_base }}:{{ row.idonu }}</td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="5">Пока новых ONU нет</td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

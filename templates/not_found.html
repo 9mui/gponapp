@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}ONU not found{% endblock %}
+{% block content %}
+<section class="panel">
+  <h2>ONU не найдена</h2>
+  <p>SN: <strong>{{ sn }}</strong></p>
+  <p>Запись не найдена в текущей базе.</p>
+  <div class="not-found-wrap">
+    <img class="not-found-image" src="{{ url_for('static', filename='img/not_found.gif') }}" alt="ONU not found">
+  </div>
+</section>
+{% endblock %}

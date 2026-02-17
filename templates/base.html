@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}gpon netco{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="container">
+    <div class="topbar">
+      <a href="/" class="brand-link" aria-label="Главная">
+        <img class="brand-logo" src="{{ url_for('static', filename='img/turon-logo.png') }}" alt="Turon Telecom">
+      </a>
+      <a href="/" class="brand-title-link" aria-label="На главную">NETCO GPON</a>
+      <form method="post" action="/search" class="search-form">
+        <input name="q" placeholder="Поиск ONU по SN (16 HEX)">
+        <button type="submit">Найти</button>
+      </form>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="flash flash-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

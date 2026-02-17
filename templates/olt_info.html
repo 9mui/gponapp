@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Информация OLT {{ info.ip }}{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-title-row">
+    <h2>Информация об OLT {{ info.ip }}</h2>
+    <a class="panel-btn" href="/olt/{{ info.ip }}">К портам OLT</a>
+  </div>
+  <table class="onu-kv">
+    <tbody>
+      <tr>
+        <th>IP адрес</th>
+        <td>{{ info.ip }}</td>
+      </tr>
+      <tr>
+        <th>Производитель</th>
+        <td>{{ info.vendor }}</td>
+      </tr>
+      <tr>
+        <th>Модель</th>
+        <td>{{ info.model }}</td>
+      </tr>
+      <tr>
+        <th>Версия прошивки</th>
+        <td>{{ info.firmware }}</td>
+      </tr>
+      <tr>
+        <th>Память</th>
+        <td>{{ info.memory }}</td>
+      </tr>
+      <tr>
+        <th>CPU</th>
+        <td>{{ info.cpu }}</td>
+      </tr>
+      <tr>
+        <th>Температура</th>
+        <td>{{ info.temperature }}</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+{% endblock %}

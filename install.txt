@@ -1,0 +1,163 @@
+GPON_TURON INSTALL (systemd)
+============================
+
+Цель
+----
+Развернуть проект на другом Linux-сервере так, чтобы он работал в фоне через systemd
+и перезапускался командой:
+
+  systemctl restart gpon_turon
+
+Ниже пример для Ubuntu/Debian.
+
+
+1) Установка пакетов
+--------------------
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip snmp snmp-mibs-downloader
+
+
+2) Копирование проекта
+----------------------
+Рекомендуемый путь:
+
+  /opt/gponapp/gpon_turon
+
+Пример:
+
+  sudo mkdir -p /opt/gponapp
+  sudo cp -R ./gpon_turon /opt/gponapp/
+
+
+3) Создание пользователя (рекомендуется)
+----------------------------------------
+sudo useradd -r -s /usr/sbin/nologin -d /opt/gponapp gpon || true
+sudo chown -R gpon:gpon /opt/gponapp
+
+
+4) Python окружение и зависимости
+---------------------------------
+cd /opt/gponapp/gpon_turon
+sudo -u gpon python3 -m venv .venv
+sudo -u gpon ./.venv/bin/pip install --upgrade pip
+sudo -u gpon ./.venv/bin/pip install -r requirements.txt
+
+
+5) Конфиг .env
+--------------
+Создайте файл /opt/gponapp/gpon_turon/.env
+
+Пример содержимого:
+
+APP_ENV=production
+APP_HOST=0.0.0.0
+APP_PORT=5001
+APP_DEBUG=false
+SECRET_KEY=change-me-please
+DB_PATH=/opt/gponapp/gpon_turon/instance/gpon_turon.db
+SCHEMA_PATH=/opt/gponapp/gpon_turon/schema.sql
+SNMP_TIMEOUT=1.0
+SNMP_RETRIES=1
+AUTO_REFRESH_ENABLED=true
+AUTO_REFRESH_INTERVAL_MINUTES=15
+
+Права:
+
+sudo chown gpon:gpon /opt/gponapp/gpon_turon/.env
+sudo chmod 640 /opt/gponapp/gpon_turon/.env
+
+
+6) systemd unit
+---------------
+Создайте файл /etc/systemd/system/gpon_turon.service
+
+Содержимое:
+
+[Unit]
+Description=GPON Turon Flask Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gpon
+Group=gpon
+WorkingDirectory=/opt/gponapp/gpon_turon
+Environment=PYTHONPATH=src
+EnvironmentFile=/opt/gponapp/gpon_turon/.env
+ExecStart=/opt/gponapp/gpon_turon/.venv/bin/python run.py
+Restart=always
+RestartSec=3
+
+# Ограничения/безопасность (опционально)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/gponapp/gpon_turon
+
+[Install]
+WantedBy=multi-user.target
+
+
+7) Запуск и автозапуск
+----------------------
+sudo systemctl daemon-reload
+sudo systemctl enable gpon_turon
+sudo systemctl start gpon_turon
+
+Проверка:
+
+sudo systemctl status gpon_turon
+sudo journalctl -u gpon_turon -f
+
+
+8) Управление сервисом
+----------------------
+Перезапуск:
+
+  sudo systemctl restart gpon_turon
+
+Остановка:
+
+  sudo systemctl stop gpon_turon
+
+Запуск:
+
+  sudo systemctl start gpon_turon
+
+
+9) Сеть / firewall
+------------------
+Приложение слушает порт 5001.
+Откройте его в firewall при необходимости.
+
+Пример (UFW):
+
+  sudo ufw allow 5001/tcp
+
+
+10) Типичные проблемы
+---------------------
+1. ModuleNotFoundError: gpon_turon
+   -> проверьте, что в unit есть: Environment=PYTHONPATH=src
+
+2. snmpbulkwalk not found
+   -> установите пакет snmp (см. шаг 1)
+
+3. Сервис не стартует после правок unit
+   -> обязательно:
+      sudo systemctl daemon-reload
+      sudo systemctl restart gpon_turon
+
+4. Пустые SNMP данные
+   -> проверьте community/IP OLT и доступность SNMP с сервера.
+
+
+11) Обновление проекта
+----------------------
+После обновления кода:
+
+cd /opt/gponapp/gpon_turon
+sudo -u gpon ./.venv/bin/pip install -r requirements.txt
+sudo systemctl restart gpon_turon
+

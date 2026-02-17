@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}OLT {{ olt.hostname }}{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>OLT {{ olt.hostname }} ({{ olt.ip }})</h2>
+      <p class="muted">Vendor: {{ olt.vendor }} | Last refresh: {{ olt.last_refresh_at|tz_tashkent }}</p>
+    </div>
+    <div class="panel-actions">
+      <form method="post" action="/olt/{{ olt.ip }}/refresh">
+        <button class="panel-btn" type="submit">Обновить данные</button>
+      </form>
+      <a class="panel-btn" href="/olt/{{ olt.ip }}/info">Информация об OLT</a>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Порты</h2>
+  <table>
+    <thead>
+      <tr>
+        <th class="col-port-name">Порт</th>
+        <th>ONU</th>
+        <th class="col-port-actions">Действие</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if ports %}
+        {% for p in ports %}
+          <tr>
+            <td class="col-port-name">{{ p.name }}</td>
+            <td>{{ p.onu_count }}</td>
+            <td class="col-port-actions">
+              <div class="inline-actions">
+                <a class="btn-link action-btn" href="/olt/{{ olt.ip }}/port/{{ p.ifindex }}">Открыть</a>
+                <form method="post" action="/olt/{{ olt.ip }}/port/{{ p.ifindex }}/bounce"
+                      onsubmit="return confirm('Перезагрузить порт {{ p.name }}?')">
+                  <button class="danger small-btn action-btn" type="submit">Перезагрузить порт</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="3">Порты еще не загружены</td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

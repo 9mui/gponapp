@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ port_name }}{% endblock %}
+{% block content %}
+<section class="panel compact-head">
+  <div class="panel-head">
+    <div>
+      <h2>{{ olt.hostname }} ({{ olt.ip }})</h2>
+      <p class="muted">Порт: {{ port_name }}</p>
+    </div>
+    <a class="btn-link" href="/olt/{{ olt.ip }}">К портам OLT</a>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>ONU на порту</h2>
+  <p class="muted">Всего ONU: {{ total }} | Страница {{ page }} из {{ total_pages }}</p>
+  <table>
+    <thead>
+      <tr>
+        <th class="col-onu-id">ONU ID</th>
+        <th class="col-onu-sn">SN</th>
+        <th class="col-onu-actions">Действие</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if onus %}
+        {% for row in onus %}
+          <tr>
+            <td class="col-onu-id">{{ row.idonu }}</td>
+            <td class="col-onu-sn">{{ row.snonu }}</td>
+            <td class="col-onu-actions"><a class="btn-link" href="/onu/sn/{{ row.snonu }}">Открыть ONU</a></td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="3">На этом порту ONU не найдены</td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <div class="pager">
+    {% if page > 1 %}
+      <a class="btn-link" href="/olt/{{ olt.ip }}/port/{{ ifindex }}?page={{ page - 1 }}">← Назад</a>
+    {% else %}
+      <span class="btn-link disabled">← Назад</span>
+    {% endif %}
+
+    {% if page < total_pages %}
+      <a class="btn-link" href="/olt/{{ olt.ip }}/port/{{ ifindex }}?page={{ page + 1 }}">Вперёд →</a>
+    {% else %}
+      <span class="btn-link disabled">Вперёд →</span>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

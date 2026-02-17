@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}gpon netco{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-title-row">
+    <h2>Добавить OLT</h2>
+    <div class="panel-actions">
+      <form method="post" action="/olts/refresh-all">
+        <button class="panel-btn" type="submit">Обновить все OLT</button>
+      </form>
+      <a class="panel-btn" href="/onus/new">Новые ONU</a>
+    </div>
+  </div>
+  <form method="post" action="/olts/add" class="grid-form add-olt-form">
+    <input name="hostname" placeholder="Hostname" required>
+    <input name="ip" placeholder="IP" required>
+    <input name="community" placeholder="Community" value="private">
+    <select name="vendor" class="vendor-select">
+      <option value="bdcom" selected>BDCOM</option>
+    </select>
+    <button type="submit">Сохранить</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Список OLT</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th class="col-host">Hostname</th>
+        <th class="col-ip">IP</th>
+        <th>Vendor</th>
+        <th class="col-last">Last refresh</th>
+        <th class="col-actions">Действие</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if olts %}
+        {% for row in olts %}
+          <tr>
+            <td>{{ row.id }}</td>
+            <td class="col-host">
+              <span class="olt-host-cell">
+                <span class="olt-dot {{ 'olt-dot-up' if row.poll_ok else 'olt-dot-down' }}" title="{{ 'OLT отвечает' if row.poll_ok else 'OLT не отвечает' }}"></span>
+                <span>{{ row.hostname }}</span>
+              </span>
+            </td>
+            <td class="col-ip"><a class="table-link" href="/olt/{{ row.ip }}">{{ row.ip }}</a></td>
+            <td>{{ row.vendor }}</td>
+            <td class="col-last">{{ row.last_refresh_at|tz_tashkent }}</td>
+            <td class="col-actions">
+              <div class="inline-actions">
+                <a class="btn-link" href="/olt/{{ row.ip }}">Порты</a>
+                <form method="post" action="/olts/{{ row.id }}/delete" onsubmit="return confirm('Удалить OLT {{ row.hostname }}?')">
+                  <button class="danger" type="submit">Удалить</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="6">Пока нет OLT</td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+
+{% endblock %}

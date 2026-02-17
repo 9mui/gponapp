@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}ONU {{ sn }}{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-title-row">
+    <h2>ONU {{ sn }}</h2>
+    <form method="post" action="/onu/sn/{{ sn }}/reboot" onsubmit="return confirm('Хотите перезагрузить ONU?')">
+      <button class="panel-btn panel-btn-danger" type="submit">Перезагрузить ONU</button>
+    </form>
+  </div>
+  <table class="onu-kv">
+    <tbody>
+      <tr><th>OLT IP</th><td>{{ onu.olt_ip }}</td></tr>
+      <tr><th>Порт</th><td>{{ port_display }}</td></tr>
+      <tr>
+        <th>Status</th>
+        <td>
+          {% if metrics.status == "ONLINE" %}
+            <span class="status-dot status-online"></span>ONLINE
+          {% elif metrics.status == "OFFLINE" %}
+            <span class="status-dot status-offline"></span>OFFLINE
+          {% else %}
+            <span class="status-dot status-unknown"></span>-
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <th>LAN статус</th>
+        <td>
+          {% if metrics.lan_status == "UP" %}
+            <span class="status-dot status-online"></span>UP
+          {% elif metrics.lan_status == "DOWN" %}
+            <span class="status-dot status-offline"></span>DOWN
+          {% else %}
+            <span class="status-dot status-unknown"></span>-
+          {% endif %}
+        </td>
+      </tr>
+      <tr><th>Distance</th><td>{{ metrics.distance }}</td></tr>
+      <tr><th>RX (dBm)</th><td>{{ metrics.rx }}</td></tr>
+      <tr><th>TX (dBm)</th><td>{{ metrics.tx }}</td></tr>
+      <tr><th>ONU vendor</th><td>{{ onu_vendor }}</td></tr>
+      <tr><th>SN (raw)</th><td>{{ onu.snonu }}</td></tr>
+      {% if metrics.status == "OFFLINE" %}
+      <tr><th>Последний раз онлайн</th><td>{{ last_online|tz_tashkent }}</td></tr>
+      {% endif %}
+      <tr><th>Последняя причина отключения</th><td>{{ metrics.last_down_reason }}</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="panel status-image-panel">
+  {% if metrics.status == "OFFLINE" %}
+    <img class="status-image" src="{{ url_for('static', filename='img/offline.png') }}" alt="ONU offline">
+  {% elif metrics.status == "ONLINE" and metrics.lan_status == "UP" %}
+    <img class="status-image" src="{{ url_for('static', filename='img/online_up.png') }}" alt="ONU online with LAN up">
+  {% elif metrics.status == "ONLINE" and metrics.lan_status == "DOWN" %}
+    <img class="status-image" src="{{ url_for('static', filename='img/online_down.png') }}" alt="ONU online with LAN down">
+  {% endif %}
+</section>
+{% endblock %}
