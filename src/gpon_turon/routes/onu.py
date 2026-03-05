@@ -30,10 +30,12 @@ def search():
 
 @bp.get("/onu/sn/<sn>")
 def onu_by_sn(sn: str):
-    sn_norm, row, vendor = _service().find_by_sn(sn)
+    svc = _service()
+    sn_norm, row, vendor = svc.find_by_sn(sn)
     if len(sn_norm) != 16 or row is None:
         return render_template("not_found.html", sn=sn_norm)
-    metrics = _service().get_live_metrics(row, sn_norm)
+    metrics = svc.get_live_metrics(row, sn_norm)
+    olt_online = svc.get_olt_online_status(row)
     port_base = row["port_name"] or row["portonu"]
     port_display = f"{port_base}:{row['idonu']}"
     last_online = row["last_online"] if metrics["status"] == "OFFLINE" else None
@@ -45,6 +47,7 @@ def onu_by_sn(sn: str):
         metrics=metrics,
         port_display=port_display,
         last_online=last_online,
+        olt_online=olt_online,
     )
 
 

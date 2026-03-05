@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}gpon netco{% endblock %}
+{% block title %}gpon turon{% endblock %}
 {% block content %}
 <section class="panel">
   <div class="panel-title-row">
@@ -14,9 +14,10 @@
   <form method="post" action="/olts/add" class="grid-form add-olt-form">
     <input name="hostname" placeholder="Hostname" required>
     <input name="ip" placeholder="IP" required>
-    <input name="community" placeholder="Community" value="private">
+    <input name="community" placeholder="Community" value="NmSeGBMETLrw">
     <select name="vendor" class="vendor-select">
       <option value="bdcom" selected>BDCOM</option>
+      <option value="tplink">TP-Link</option>
     </select>
     <button type="submit">Сохранить</button>
   </form>

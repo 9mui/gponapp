@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}gpon netco{% endblock %}</title>
+  <title>{% block title %}gpon turon{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -12,7 +12,7 @@
       <a href="/" class="brand-link" aria-label="Главная">
         <img class="brand-logo" src="{{ url_for('static', filename='img/turon-logo.png') }}" alt="Turon Telecom">
       </a>
-      <a href="/" class="brand-title-link" aria-label="На главную">NETCO GPON</a>
+      <a href="/" class="brand-title-link" aria-label="На главную">Turon GPON</a>
       <form method="post" action="/search" class="search-form">
         <input name="q" placeholder="Поиск ONU по SN (16 HEX)">
         <button type="submit">Найти</button>

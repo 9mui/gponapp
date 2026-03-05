@@ -10,7 +10,17 @@
   </div>
   <table class="onu-kv">
     <tbody>
-      <tr><th>OLT IP</th><td>{{ onu.olt_ip }}</td></tr>
+      <tr>
+        <th>OLT IP</th>
+        <td>
+          {% if olt_online is sameas true %}
+            <span class="status-dot status-online" title="OLT online"></span>
+          {% else %}
+            <span class="status-dot status-offline" title="OLT offline"></span>
+          {% endif %}
+          {{ onu.olt_ip }}
+        </td>
+      </tr>
       <tr><th>Порт</th><td>{{ port_display }}</td></tr>
       <tr>
         <th>Status</th>
@@ -31,6 +41,8 @@
             <span class="status-dot status-online"></span>UP
           {% elif metrics.lan_status == "DOWN" %}
             <span class="status-dot status-offline"></span>DOWN
+          {% elif metrics.lan_status == "NOT_SUPPORTED" %}
+            <span class="status-dot status-unknown"></span>не поддерживается
           {% else %}
             <span class="status-dot status-unknown"></span>-
           {% endif %}

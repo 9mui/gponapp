@@ -14,6 +14,7 @@ class OnuRepository:
                 g.idonu,
                 g.snonu,
                 o.hostname AS olt_hostname,
+                o.vendor AS olt_vendor,
                 o.community AS olt_community,
                 p.name AS port_name,
                 s.last_seen AS last_seen,

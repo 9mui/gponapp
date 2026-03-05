@@ -1,6 +1,6 @@
 # gpon_turon
 
-Clean production-oriented GPON project (BDCOM) for ONU search, OLT/port visibility, and basic SNMP operations.
+Clean production-oriented GPON project (BDCOM + TP-Link) for ONU search, OLT/port visibility, and basic SNMP operations.
 
 This file is written as context for a fresh ChatGPT session, so a new assistant can quickly understand architecture, logic, and safe change rules.
 
@@ -20,7 +20,7 @@ Priority: stability and predictable behavior.
 
 - Backend: Flask
 - Database: SQLite
-- SNMP: `snmpbulkwalk`, `snmpset`
+- SNMP: `snmpbulkwalk`, `snmpget`, `snmpset`
 - UI: Jinja2 templates + shared CSS
 
 Main layout:
@@ -43,6 +43,7 @@ Architecture rule: `routes -> services -> repositories`.
 - `Refresh all OLT` button
 - `New ONU` button
 - OLT table (Hostname, IP, Vendor, Last refresh, actions)
+- OLT reachability indicator (green/red dot) from cached poll status
 
 ### 3.2 OLT page `/olt/<ip>`
 - GPON ports table with ONU count
@@ -57,10 +58,12 @@ Architecture rule: `routes -> services -> repositories`.
 - Link to ONU details
 
 ### 3.4 ONU page `/onu/sn/<sn>`
-- OLT IP, Port, Status, LAN status, Distance, RX/TX, ONU vendor
+- OLT IP with OLT reachability indicator (from cached `poll_status`)
+- Port, Status, LAN status, Distance, RX/TX, ONU vendor
 - Last down reason
 - For OFFLINE: `Last online`
 - `Reboot ONU` red button with confirmation
+- For TP-Link, `LAN status` can be `not supported`
 
 ### 3.5 New ONUs page `/onus/new`
 - Shows last 50 newly discovered ONUs
@@ -84,19 +87,28 @@ Unavailable SNMP values are shown as `-`.
 
 ### 4.1 OLT refresh flow
 Implemented in `OltService.refresh_olt`:
-1. Read `ifName` and GPON bind via SNMP.
-2. Sync `ponports` (diff insert/update/delete).
-3. Sync `gpon` (diff insert/delete).
-4. Remove cross-OLT duplicates by SN (ONU moved to another OLT/port).
-5. Update `last_refresh_at`.
+1. Detect OLT vendor (`bdcom` / `tplink`) and choose refresh branch.
+2. Read SNMP tables for ports and ONU data.
+3. For BDCOM use GPON bind, for TP-Link build bindings from keyed OID tables.
+4. Sync `ponports` (diff insert/update/delete).
+5. Sync `gpon` (diff insert/delete).
+6. Remove cross-OLT duplicates by SN (ONU moved to another OLT/port).
+7. Update `last_refresh_at`.
 
-### 4.2 Recent new ONU tracking
+For TP-Link duplicate SN rows, service keeps the best row (online -> has RX -> valid/larger ONU ID).
+
+### 4.2 OLT status cache
+- `OltService` stores cached reachability in `_last_poll_ok` by IP.
+- Cache is updated after `refresh_olt` / `refresh_all`.
+- Home and ONU pages use this cache for status dots without extra SNMP requests.
+
+### 4.3 Recent new ONU tracking
 When new SN rows are inserted into `gpon`:
 - check whether SN was globally known before,
 - if not, insert into `recent_new_onu`,
 - keep only latest 50 records.
 
-### 4.3 Real `Last online`
+### 4.4 Real `Last online`
 Important distinction:
 - `last_seen` means “seen in cache”, not real online state.
 - Real online history is stored in `onu_seen.last_online`.
@@ -105,7 +117,7 @@ Important distinction:
 
 This prevents showing “last auto-refresh time” as “last online”.
 
-### 4.4 Timezone
+### 4.5 Timezone
 All UI timestamps are rendered with `tz_tashkent` filter:
 - timezone: `Asia/Tashkent` (GMT+5)
 - DB timestamps are treated as UTC source.
@@ -140,6 +152,25 @@ BDCOM/GPON main OIDs:
   - `1.3.6.1.4.1.3320.9.109.1.1.1.1.0`
   - `1.3.6.1.4.1.3320.9.48.1.0`
   - `1.3.6.1.4.1.3320.9.181.1.1.7.0`
+
+TP-Link main OIDs:
+- OLT sysDescr/sysName/model/firmware:
+  - `1.3.6.1.4.1.11863.6.1.1.1.0`
+  - `1.3.6.1.4.1.11863.6.1.1.2.0`
+  - `1.3.6.1.4.1.11863.6.1.1.5.0`
+  - `1.3.6.1.4.1.11863.6.1.1.6.0`
+- OLT CPU/MEM/TEMP:
+  - `1.3.6.1.4.1.11863.6.4.1.1.1.1.4.1`
+  - `1.3.6.1.4.1.11863.6.4.1.3.1.1.2.1`
+  - `1.3.6.1.4.1.11863.6.4.1.2.1.1.2.1`
+- ONU keyed tables:
+  - SN: `1.3.6.1.4.1.11863.6.100.1.7.2.1.6`
+  - online status: `1.3.6.1.4.1.11863.6.100.1.6.2.1.21`
+  - ONU status: `1.3.6.1.4.1.11863.6.100.1.7.2.1.7`
+  - RX/TX: `1.3.6.1.4.1.11863.6.100.1.7.2.1.26`, `1.3.6.1.4.1.11863.6.100.1.7.2.1.27`
+  - distance: `1.3.6.1.4.1.11863.6.100.1.7.2.1.18`
+  - last down reason: `1.3.6.1.4.1.11863.6.100.1.7.2.1.42`
+  - reboot: `1.3.6.1.4.1.11863.6.100.1.7.2.1.41.<key>`
 
 ## 7. Run
 
@@ -178,7 +209,7 @@ Global lock prevents overlapping full refresh cycles.
 
 ## 10. Intentionally Out of Scope (current stage)
 
-- Multi-vendor support (current target vendor: BDCOM)
+- Vendors other than BDCOM and TP-Link
 - CSV export
 - Advanced auth/roles
 - Heavy frontend JS
